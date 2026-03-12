@@ -51,6 +51,57 @@ def infer_column_type(series: pd.Series, date_columns: list[str], column_name: s
     return "categorical" if unique_ratio <= 0.5 else "text"
 
 
+def _cardinality_category(unique_count: int, non_null_count: int) -> str:
+    if non_null_count <= 0:
+        return "Low"
+    unique_ratio = unique_count / max(non_null_count, 1)
+    if unique_count <= 10 or unique_ratio <= 0.10:
+        return "Low"
+    if unique_count <= 50 or unique_ratio <= 0.50:
+        return "Medium"
+    return "High"
+
+
+def _build_field_level_profile(data: pd.DataFrame, analysis_df: pd.DataFrame, date_columns: list[str], numeric_columns: list[str], categorical_columns: list[str]) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    for column in data.columns:
+        series = _safe_series(data, column)
+        inferred_type = infer_column_type(series, date_columns, column)
+        non_null = series.dropna()
+        unique_count = int(series.nunique(dropna=True))
+        null_count = int(series.isna().sum())
+        non_null_count = int(non_null.shape[0])
+        sample_source = analysis_df[column] if column in analysis_df.columns else series
+        sample_values = sample_source.dropna().astype(str).head(3).tolist()
+        min_value = None
+        max_value = None
+        if inferred_type == "numeric":
+            numeric_values = pd.to_numeric(analysis_df[column], errors="coerce").dropna() if column in analysis_df.columns else pd.to_numeric(series, errors="coerce").dropna()
+            if not numeric_values.empty:
+                min_value = float(numeric_values.min())
+                max_value = float(numeric_values.max())
+        elif inferred_type == "datetime":
+            date_values = pd.to_datetime(sample_source, errors="coerce", format="mixed").dropna()
+            if not date_values.empty:
+                min_value = str(date_values.min())
+                max_value = str(date_values.max())
+        rows.append({
+            "column_name": column,
+            "inferred_type": inferred_type,
+            "null_count": null_count,
+            "null_percentage": (null_count / max(len(data), 1)),
+            "unique_values": unique_count,
+            "cardinality_category": _cardinality_category(unique_count, non_null_count),
+            "min_value": min_value,
+            "max_value": max_value,
+            "sample_values": ", ".join(sample_values) if sample_values else "-",
+            "looks_numeric": column in numeric_columns,
+            "looks_date_like": column in date_columns,
+            "looks_categorical": column in categorical_columns,
+        })
+    return pd.DataFrame(rows)
+
+
 def profile_dataset(data: pd.DataFrame) -> dict[str, object]:
     if len(data) > 50000:
         analysis_df = data.sample(20000, random_state=42)
@@ -87,6 +138,7 @@ def profile_dataset(data: pd.DataFrame) -> dict[str, object]:
         if numeric_columns
         else pd.DataFrame(columns=["column_name", "count", "mean", "std", "min", "25%", "50%", "75%", "max"])
     )
+    field_level_profile = _build_field_level_profile(data, analysis_df, date_columns, numeric_columns, categorical_columns)
 
     top_categories: dict[str, pd.DataFrame] = {}
     for column in categorical_columns[:6]:
@@ -167,6 +219,7 @@ def profile_dataset(data: pd.DataFrame) -> dict[str, object]:
         "numeric_columns": numeric_columns,
         "categorical_columns": categorical_columns,
         "numeric_summary": numeric_summary,
+        "field_level_profile": field_level_profile,
         "top_categories": top_categories,
         "correlation_matrix": correlation_matrix,
         "outlier_summary": outlier_summary,
@@ -219,6 +272,7 @@ def quick_profile_dataset(data: pd.DataFrame) -> dict[str, object]:
         if numeric_summary_columns
         else pd.DataFrame(columns=["column_name", "count", "mean", "std", "min", "25%", "50%", "75%", "max"])
     )
+    field_level_profile = _build_field_level_profile(data, analysis_df, date_columns, numeric_columns, categorical_columns)
 
     top_categories: dict[str, pd.DataFrame] = {}
     for column in categorical_columns[:3]:
@@ -249,6 +303,7 @@ def quick_profile_dataset(data: pd.DataFrame) -> dict[str, object]:
         "numeric_columns": numeric_columns,
         "categorical_columns": categorical_columns,
         "numeric_summary": numeric_summary,
+        "field_level_profile": field_level_profile,
         "top_categories": top_categories,
         "correlation_matrix": correlation_matrix,
         "outlier_summary": pd.DataFrame(columns=["column_name", "outlier_count", "outlier_pct", "lower_bound", "upper_bound"]),
@@ -258,6 +313,8 @@ def quick_profile_dataset(data: pd.DataFrame) -> dict[str, object]:
         "is_sampled": is_sampled,
         "profile_mode": "quick",
     }
+
+
 def create_numeric_histogram(data: pd.DataFrame, column_name: str):
     if column_name not in data.columns:
         return None

@@ -1,0 +1,11 @@
+order_id,region,product_line,revenue,operating_cost,fulfillment_days,account_manager,order_date,priority_tier,customer_segment
+5001,Midwest,Diagnostics Software,124000,88000,12,Rivera,2025-01-05,High,Enterprise
+5002,South,Analytics Services,98000,64000,18,Patel,2025-01-12,Medium,Mid-Market
+5003,Northeast,Revenue Cycle Tools,142000,97000,10,Chen,2025-01-18,High,Enterprise
+5004,West,Training Services,54000,33000,7,Williams,2025-02-02,Low,Community
+5005,Midwest,Analytics Services,111000,72000,14,Rivera,2025-02-09,Medium,Enterprise
+5006,South,Diagnostics Software,135000,91000,16,Patel,2025-02-15,High,Enterprise
+5007,West,Revenue Cycle Tools,87000,56000,11,Lopez,2025-03-03,Medium,Mid-Market
+5008,Northeast,Training Services,62000,39000,8,Chen,2025-03-10,Low,Community
+5009,Midwest,Population Health,153000,101000,20,Rivera,2025-03-18,High,Enterprise
+5010,South,Population Health,118000,79000,15,Patel,2025-03-25,Medium,Mid-Market

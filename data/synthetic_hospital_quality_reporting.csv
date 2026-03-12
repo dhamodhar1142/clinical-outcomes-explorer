@@ -1,0 +1,10 @@
+hospital_name,provider_id,measure_name,measure_id,score,denominator,compared_to_national,measure_start_date,measure_end_date
+North Valley Medical Center,330101,30-Day Readmission Rate,READM_30,15.2,240,Worse,2025-01-01,2025-12-31
+North Valley Medical Center,330101,Average Length of Stay,LOS_AVG,5.6,240,Same,2025-01-01,2025-12-31
+North Valley Medical Center,330101,Sepsis Bundle Compliance,SEP_01,88.0,190,Better,2025-01-01,2025-12-31
+Lakeside Community Hospital,330102,30-Day Readmission Rate,READM_30,11.4,180,Better,2025-01-01,2025-12-31
+Lakeside Community Hospital,330102,Average Length of Stay,LOS_AVG,4.9,180,Better,2025-01-01,2025-12-31
+Lakeside Community Hospital,330102,Sepsis Bundle Compliance,SEP_01,81.0,145,Same,2025-01-01,2025-12-31
+Metro Regional Hospital,330103,30-Day Readmission Rate,READM_30,13.1,320,Same,2025-01-01,2025-12-31
+Metro Regional Hospital,330103,Average Length of Stay,LOS_AVG,6.2,320,Worse,2025-01-01,2025-12-31
+Metro Regional Hospital,330103,Sepsis Bundle Compliance,SEP_01,79.5,210,Worse,2025-01-01,2025-12-31

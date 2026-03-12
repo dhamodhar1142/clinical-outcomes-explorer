@@ -1,193 +1,214 @@
-# Clinical Outcomes Explorer
+# Smart Dataset Analyzer
 
-### Dual-Mode Streamlit Analytics Dashboard for CSV Profiling and Healthcare Operations Insights
+Smart Dataset Analyzer is a portfolio-ready Streamlit healthcare analytics platform for profiling messy tabular data, unlocking blocked analytics through transparent remediation, and generating stakeholder-facing summaries, governance views, and decision-support outputs.
 
-## Overview
-Clinical Outcomes Explorer is a Streamlit dashboard designed to do two things well:
+## Why this project exists
 
-1. Profile and summarize any uploaded CSV through a generic analytics workflow.
-2. Activate advanced healthcare analytics when the uploaded dataset contains enough mapped clinical and operational fields.
+Real-world healthcare and operational datasets are rarely clean, fully mapped, or immediately analytics-ready. This project demonstrates how a modern analytics product can:
 
-That dual-mode design makes the project more realistic and more versatile than a fixed demo dashboard. A recruiter or hiring manager can see both broad analytics product thinking and healthcare-specific domain application in one portfolio project.
+- ingest CSV and Excel data without assuming a fixed schema
+- profile and score dataset readiness automatically
+- surface healthcare-specific analytics only when the data supports them
+- disclose synthetic helper support transparently when demo-safe augmentation is used
+- produce polished stakeholder outputs for analysts, operators, and recruiters
 
-## Business Problem
-Analytics teams often receive raw CSV extracts with inconsistent schemas, mixed data quality, and varying levels of business readiness. In healthcare settings, that challenge is even more important because leaders need fast answers to questions like:
+## Key capabilities
 
-- Which departments are driving cost pressure?
-- Which diagnoses show elevated readmission risk?
-- Which patient cohorts require closer intervention?
-- Where are there opportunities to reduce length of stay or avoid preventable readmissions?
-- Is the uploaded data complete enough to support advanced operational analysis?
+- Schema-flexible ingestion for CSV and Excel, including Excel sheet selection
+- Structural detection for numeric, date, categorical, text, boolean, and identifier-like fields
+- Semantic mapping and healthcare-aware field inference
+- Data quality review, remediation guidance, and governance support
+- Healthcare analytics including:
+  - risk segmentation
+  - readmission-focused analytics
+  - cohort builder and cohort monitoring
+  - anomaly detection
+  - benchmarking
+  - care pathway and outcome intelligence
+- Decision-support features including:
+  - intervention recommendations
+  - scenario simulation
+  - executive summaries
+  - prioritized insights
+  - KPI benchmarking
+- AI Copilot workflow planning and safe in-app action guidance
+- Standards, privacy, and governance support:
+  - CDISC / FHIR / HL7 readiness review
+  - terminology and standards mapping support
+  - PHI / PII detection and privacy review
+  - lineage and audit-style summaries
+- Export Center with:
+  - executive report pack
+  - print-friendly summaries
+  - compliance and governance outputs
+  - stakeholder export bundle support
 
-Clinical Outcomes Explorer addresses that problem by combining automatic dataset profiling with a healthcare-specific analytics layer that only activates when the detected schema supports it.
+## Architecture summary
 
-## Two Analysis Modes
-### 1. Generic Auto-Analysis
-This mode runs for any uploaded CSV, regardless of industry or schema.
+The app keeps a modular Python architecture built around a single Streamlit entrypoint.
 
-It automatically profiles the dataset and surfaces:
-- row count and column count
-- column names and inferred data types
-- missing values by column
-- duplicate row count
-- unique values by column
-- numeric summary statistics
-- top categories for categorical columns
-- correlation matrix for numeric columns
-- basic outlier detection for numeric columns
-- automatic date-column detection
-- trend charts when a date field is detected
-- automatic charts chosen from available numeric and categorical columns
+- `app.py`
+  - Streamlit UI, navigation, orchestration, export flow, and tab rendering
+- `src/data_loader.py`
+  - file loading, demo datasets, ingestion helpers
+- `src/schema_detection.py`
+  - structural detection and type heuristics
+- `src/profiler.py`
+  - profiling, quality summaries, numeric summaries
+- `src/semantic_mapper.py`
+  - semantic mapping, remediation logic, data dictionary support
+- `src/remediation_engine.py`
+  - BMI remediation, synthetic helper fields, audit-friendly augmentation
+- `src/readiness_engine.py`
+  - readiness activation and scoring
+- `src/healthcare_analysis.py`
+  - healthcare analytics modules and pathway/readmission/risk logic
+- `src/modeling_studio.py`
+  - modeling, model comparison, fairness, explainability
+- `src/decision_support.py`
+  - executive summaries, benchmarking, scenarios, recommendations, prioritized insights
+- `src/export_utils.py`
+  - report builders, governance/compliance exports, manifest helpers
+- `src/presentation_support.py`
+  - executive report pack, print-friendly outputs, run history, governance summary
+- `src/portfolio_support.py`
+  - guided demo content, onboarding summaries, README-ready and screenshot-ready support content
 
-This means the app remains useful even when the uploaded file has no healthcare fields at all.
+## Built-in demo datasets
 
-### 2. Healthcare Analytics Mode
-This mode activates only when schema matching detects enough healthcare-relevant fields, such as combinations of:
-- diagnosis
-- department
-- cost
-- length of stay
-- readmission
-- age
-- gender
-- comorbidity score
-- prior admissions
-- date
+The repository includes built-in demo datasets so the app can be explored immediately:
 
-When that coverage is strong enough, the app unlocks advanced clinical and hospital operations views such as KPIs, cohort analysis, risk modeling, cost drivers, benchmarking, scorecards, and intervention scenarios.
+- `Healthcare Operations Demo`
+- `Hospital Reporting Demo`
+- `Generic Business Demo`
 
-If the uploaded CSV does not contain enough mapped healthcare fields, the app stays in Generic Auto-Analysis mode and presents one clear message rather than showing a page full of unavailable sections.
+These are good for:
 
-## How Uploaded CSVs Are Profiled
-When a user uploads a CSV, the app:
+- recruiter walkthroughs
+- Streamlit deployment demos
+- explaining native vs synthetic support
+- showing how module readiness changes with dataset structure
 
-1. Normalizes column names.
-2. Attempts schema matching against common healthcare aliases.
-3. Builds a generic dataset profile based on rows, columns, inferred data types, and completeness checks.
-4. Detects likely date columns and generates trend views when possible.
-5. Determines whether the dataset is suitable for advanced healthcare analysis.
-6. Enables healthcare tabs only when schema coverage supports them.
+## Synthetic support explanation
 
-This keeps the experience stable, professional, and adaptable to real-world file variability.
+The platform can optionally create deterministic helper fields when source data is incomplete. Examples include:
 
-## Key Features
-- Sidebar CSV upload for uploaded-data workflows
-- Generic Auto-Analysis for any CSV file
-- Automatic schema detection and healthcare field mapping
-- Clean split between generic profiling and healthcare analytics
-- Executive summary and KPI monitoring for healthcare-ready datasets
-- Cohort analysis by age group, diagnosis, department, gender, and comorbidity bucket
-- Logistic regression model for readmission risk prediction
-- Model explainability using logistic regression coefficients
-- Risk segmentation and high-risk patient review
-- Cost driver analysis and department scorecards
-- Benchmarking against the overall uploaded dataset
-- Operational scenario comparison for LOS and readmission improvement ideas
-- Data quality review and export-ready outputs
-- Rule-based analytics assistant for common business questions
-- Graceful fallback behavior for sparse filters and partial schemas
+- synthetic `event_date` from a year-only field
+- synthetic `estimated_cost` for blocked financial analytics
+- derived diagnosis labels for demo-safe clinical segmentation
+- synthetic readmission support for readmission workflow walkthroughs
 
-## Tech Stack
-- Python
-- Streamlit
-- Pandas
-- Plotly
-- scikit-learn
+These helpers are:
 
-## Local Setup
-1. Clone or download the repository.
-2. Create and activate a virtual environment.
-3. Install project dependencies.
+- disclosed explicitly in the UI
+- tracked in lineage and governance summaries
+- used to unlock demo-safe workflows
+- not presented as source-grade clinical truth
+
+## Demo walkthrough
+
+Recommended walkthrough:
+
+1. Start in `Data Intake`
+   - review guided demo mode, onboarding, lineage, and production hardening
+2. Open `Dataset Profile · Overview`
+   - review readiness, governance summary, and executive snapshot
+3. Open `Data Quality · Analysis Readiness`
+   - review blockers, remediation, standards, privacy, and quick actions
+4. Open `Healthcare Analytics · Healthcare Intelligence`
+   - review risk, readmission, pathway, cohort, and modeling outputs
+5. Finish in `Insights & Export · Export Center`
+   - generate executive, governance, compliance, and stakeholder outputs
+
+## How to run locally
+
+Recommended Python version:
+
+- Python 3.11 or 3.12
+
+Setup:
 
 ```bash
+python -m venv .venv
+.venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-4. Make sure the sample dataset exists at `data/synthetic_hospital_data.csv` if you want to use the built-in healthcare demo.
+Launch:
 
-## Run the App
 ```bash
 streamlit run app.py
 ```
 
-Then open the local Streamlit URL shown in your terminal.
+## Optional dependencies
 
-You can either:
-- use the included synthetic hospital dataset
-- upload your own CSV for generic auto-analysis
-- upload a healthcare-oriented CSV to unlock advanced clinical analytics when the schema is compatible
+The core runtime uses `requirements.txt`.
 
-## Example Healthcare CSV Schema
-A healthcare upload does not need to match these names exactly, but fields like the following help activate the advanced healthcare mode:
+Optional packages are listed in `requirements-optional.txt`:
 
-```text
-admission_id
-admission_date
-age
-gender
-diagnosis
-department
-length_of_stay
-cost
-readmission
-comorbidity_score
-prior_admissions_12m
+- `xgboost`
+  - enables optional model comparison support when available
+- `openai`
+  - supports optional enhanced AI Copilot explanation mode if configured
+
+The app degrades safely when optional packages are not installed.
+
+## Deployment notes
+
+Streamlit Community Cloud style startup:
+
+```bash
+streamlit run app.py
 ```
 
-The schema matcher also supports common aliases such as:
-- `patient_age`
-- `sex`
-- `dx`
-- `diagnosis_group`
-- `unit`
-- `service_line`
-- `los`
-- `total_cost`
-- `charges`
-- `readmitted`
-- `readmission_flag`
-- `admit_date`
-- `encounter_date`
+Important deployment notes:
 
-## Project Structure
-```text
-clinical-outcomes-explorer/
-+-- app.py
-+-- data/
-|   +-- synthetic_hospital_data.csv
-+-- src/
-|   +-- analytics.py
-|   +-- analytics_assistant.py
-|   +-- charts.py
-|   +-- data_loader.py
-|   +-- generic_profile.py
-|   +-- metrics.py
-|   +-- schema_detection.py
-+-- README.md
-+-- requirements.txt
-```
+- `app.py` is the entrypoint
+- built-in demo data lives under `data/`
+- the app uses safe fallbacks when optional packages are absent
+- large datasets are handled with staged sampling and diagnostics
+- Docker support files are included:
+- `Dockerfile`
+- `.dockerignore`
 
-## Screenshots
-Add screenshots here after running the app locally.
+See `docs/deployment.md` for a concise deployment checklist.
 
-Suggested screenshots:
-- Generic Auto-Analysis overview for a non-healthcare CSV
-- Detected schema and healthcare-mode activation on a compatible file
-- Executive Overview and KPI section
-- Readmission Risk Modeling and explainability section
-- Cost and department performance views
+## Demo dataset guidance
 
-## Synthetic Data Note
-The included sample healthcare dataset is synthetic and is used for demonstration purposes only. It does not contain real patient records, protected health information, or production clinical data.
+Datasets that unlock the strongest demo experience usually include some combination of:
 
-## Why This Project Matters for Healthcare Analytics Roles
-This project is especially relevant for healthcare analytics, hospital operations, and clinical strategy roles because it demonstrates:
-- practical KPI design for utilization, cost, and readmissions
-- strong attention to schema variability and data readiness
-- cohort-based and department-based operational analysis
-- interpretable predictive modeling for readmission risk
-- dashboard thinking for both analyst and executive audiences
-- modular Python design with reusable analytics helpers
-- the ability to translate messy data inputs into a polished analytics experience
+- patient or encounter identifier
+- event-style date or year field
+- age
+- BMI or other risk signal
+- diagnosis or service grouping
+- department / facility / provider
+- outcome or readmission-style flag
+- cost or utilization fields
 
-For recruiters and hiring managers, Clinical Outcomes Explorer shows both technical implementation and business framing in a way that mirrors real analytics product work.
+If those fields are incomplete, the app can still demonstrate readiness, remediation, governance, and synthetic helper support in a transparent way.
+
+See `docs/demo_notes.md` for demo dataset suggestions and module unlock guidance.
+
+## Limitations
+
+- Some healthcare logic is intentionally heuristic and demo-safe rather than production clinical decision support
+- Compliance, privacy, and standards outputs are readiness aids, not legal or certification determinations
+- Session history, snapshots, and workflow packs are session-scoped rather than persistent across users
+- Synthetic helper fields improve demo readiness but should not be treated as native clinical source truth
+
+## Future enhancements
+
+- richer collaboration and comments
+- persistent run history and governance packs
+- broader healthcare submodules for claims, population health, and EHR quality
+- deeper report packaging and PDF workflows
+- more advanced deployment automation
+
+## Portfolio and presentation support
+
+Additional recruiter/demo support files:
+
+- `docs/demo_notes.md`
+- `docs/portfolio_summaries.md`
+- `docs/screenshots/README.md`

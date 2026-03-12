@@ -449,6 +449,105 @@ def build_model_evaluation(scored_data: pd.DataFrame, threshold: float) -> dict[
     }
 
 
+
+def build_executive_report(data: pd.DataFrame, schema_info: dict[str, object], selected_filters: dict[str, object], insights: list[str], alerts: list[dict[str, str]], metrics: dict[str, float | int] | None = None, executive_summary: dict[str, object] | None = None) -> bytes:
+    capabilities = dataset_capabilities(schema_info)
+    coverage = schema_coverage_percent(schema_info.get("matched_schema", {}))
+    metrics = metrics or (get_key_metrics(data) if {"readmission", "length_of_stay", "cost"}.issubset(data.columns) else {})
+    executive_summary = executive_summary or {}
+    missing_total = int(data.isna().sum().sum())
+    duplicate_rows = int(data.duplicated().sum())
+    top_missing = data.isna().sum().sort_values(ascending=False)
+    top_missing = top_missing[top_missing > 0].head(3)
+
+    next_actions: list[str] = []
+    if not capabilities.get("kpi_analysis"):
+        next_actions.append("Map readmission, cost, and length of stay to unlock the KPI and executive summary views.")
+    if not capabilities.get("cost_analysis"):
+        next_actions.append("Add diagnosis and department fields to improve cost and utilization analysis.")
+    if not capabilities.get("machine_learning"):
+        next_actions.append("Map age, comorbidity score, and prior admissions if you want to explore predictive risk modeling.")
+    if not next_actions:
+        next_actions.append("Review the Executive Overview and Cost & Performance sections to prioritize operational opportunities.")
+        next_actions.append("Use Export Center outputs to share a filtered summary with instructors, peers, or stakeholders.")
+
+    buffer = io.StringIO()
+    buffer.write("Clinical Outcomes Explorer Executive Report\n")
+    buffer.write("=" * 42 + "\n\n")
+    buffer.write("Dataset Overview\n")
+    buffer.write("-" * 16 + "\n")
+    buffer.write(f"Rows in scope: {len(data):,}\n")
+    buffer.write(f"Columns in scope: {len(data.columns):,}\n")
+    if selected_filters:
+        buffer.write("Applied filters:\n")
+        for key, value in selected_filters.items():
+            buffer.write(f"- {key}: {value}\n")
+    else:
+        buffer.write("Applied filters: none\n")
+    buffer.write("\n")
+
+    buffer.write("Schema and Readiness Summary\n")
+    buffer.write("-" * 28 + "\n")
+    buffer.write(f"Detected dataset mode: {str(schema_info.get('dataset_mode', 'generic_tabular')).replace('_', ' ').title()}\n")
+    buffer.write(f"Schema coverage: {coverage:.0%}\n")
+    buffer.write(f"Mapped fields: {len(schema_info.get('matched_schema', {}))}/{len(schema_info.get('matched_schema', {})) + len(schema_info.get('missing_fields', []))}\n")
+    buffer.write(f"Readiness note: {schema_info.get('mode_reason', 'Schema readiness details are unavailable.')}\n")
+    if schema_info.get("missing_fields"):
+        missing_labels = [field.replace("_", " ").title() for field in schema_info.get("missing_fields", [])[:6]]
+        buffer.write(f"Fields that would unlock more features: {', '.join(missing_labels)}\n")
+    buffer.write("\n")
+
+    buffer.write("Data Quality Findings\n")
+    buffer.write("-" * 21 + "\n")
+    buffer.write(f"Total missing values: {missing_total:,}\n")
+    buffer.write(f"Duplicate rows: {duplicate_rows:,}\n")
+    if not top_missing.empty:
+        buffer.write("Top columns with missing data:\n")
+        for column_name, count in top_missing.items():
+            buffer.write(f"- {column_name}: {int(count):,}\n")
+    else:
+        buffer.write("No missing-value hotspots were detected in the current filtered data.\n")
+    buffer.write("\n")
+
+    buffer.write("KPI Summary\n")
+    buffer.write("-" * 11 + "\n")
+    if metrics:
+        if "total_admissions" in metrics:
+            buffer.write(f"Admissions in scope: {int(metrics['total_admissions']):,}\n")
+        if "readmission_rate" in metrics:
+            buffer.write(f"Readmission rate: {float(metrics['readmission_rate']):.1%}\n")
+        if "average_length_of_stay" in metrics:
+            buffer.write(f"Average length of stay: {float(metrics['average_length_of_stay']):.1f} days\n")
+        if "average_cost" in metrics:
+            buffer.write(f"Average cost per admission: ${float(metrics['average_cost']):,.2f}\n")
+        if "total_cost" in metrics:
+            buffer.write(f"Total cost in scope: ${float(metrics['total_cost']):,.0f}\n")
+    else:
+        buffer.write("Healthcare KPI calculations are limited for this dataset because the required mapped fields are not yet available.\n")
+    if executive_summary and executive_summary.get("narrative"):
+        buffer.write("\n")
+        buffer.write(f"Executive narrative: {executive_summary['narrative']}\n")
+    buffer.write("\n")
+
+    buffer.write("Top Findings\n")
+    buffer.write("-" * 12 + "\n")
+    if insights:
+        for insight in insights[:5]:
+            buffer.write(f"- {insight}\n")
+    elif alerts:
+        for alert in alerts[:3]:
+            buffer.write(f"- {alert['title']}: {alert['message']}\n")
+    else:
+        buffer.write("- The current filtered dataset is ready for exploratory review, but no additional healthcare-specific findings were generated.\n")
+    buffer.write("\n")
+
+    buffer.write("Recommended Next Actions\n")
+    buffer.write("-" * 24 + "\n")
+    for action in next_actions[:4]:
+        buffer.write(f"- {action}\n")
+
+    return buffer.getvalue().encode("utf-8")
+
 def build_stakeholder_summary(metrics: dict[str, float | int], insights: list[str], alerts: list[dict[str, str]], scenario_table: pd.DataFrame) -> bytes:
     top_cost_driver = insights[0] if insights else "Top cost driver unavailable."
     highest_risk_cohort = next((insight for insight in insights if "highest-risk cohort" in insight.lower()), "Highest-risk cohort unavailable.")
