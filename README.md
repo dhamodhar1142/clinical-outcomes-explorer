@@ -1,6 +1,19 @@
 # Smart Dataset Analyzer
 
-Smart Dataset Analyzer is a portfolio-ready Streamlit healthcare analytics platform for profiling messy tabular data, unlocking blocked analytics through transparent remediation, and generating stakeholder-facing summaries, governance views, and decision-support outputs.
+Smart Dataset Analyzer is an advanced **healthcare analytics and data intelligence platform** built with Python and Streamlit.  
+It helps analysts and healthcare teams **profile messy datasets, detect structural and semantic patterns, unlock blocked analytics workflows, and generate stakeholder-ready reports**.
+
+The platform combines **data profiling, remediation pipelines, predictive modeling, governance checks, and decision-support tools** into a single interactive analytics environment.
+
+It is designed as a **portfolio-ready analytics product** that demonstrates how modern healthcare analytics systems can:
+
+- ingest CSV or Excel datasets without assuming a fixed schema
+- automatically evaluate dataset readiness for healthcare analytics
+- surface clinical and operational insights only when the data supports them
+- transparently disclose synthetic helper support when demo-safe augmentation is used
+- generate polished executive summaries, governance views, and export-ready reports
+
+This repository demonstrates **analytics engineering, healthcare data science, governance-aware analytics design, and product-style dashboard development** in one project.
 
 ## Why this project exists
 
