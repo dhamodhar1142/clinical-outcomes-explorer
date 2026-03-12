@@ -82,6 +82,7 @@ from src.decision_support import (
     build_prioritized_insights,
     build_scenario_simulation_studio,
 )
+from src.dataset_intelligence import build_dataset_intelligence_report
 from src.profiler import analysis_sample_info, build_dataset_overview, build_field_profile, build_numeric_summary, build_quality_checks
 from src.readiness_engine import evaluate_analysis_readiness
 from src.remediation_engine import apply_remediation_augmentations
@@ -335,12 +336,26 @@ def run_pipeline(
         remediation_context,
         readiness,
     )
+    dataset_intelligence = build_dataset_intelligence_report(
+        analysis_data,
+        structure,
+        semantic,
+        readiness,
+        healthcare,
+        quality,
+        remediation,
+        remediation_context,
+        standards,
+        privacy_review,
+        compliance_governance_summary,
+    )
     executive_report_pack = build_executive_report_pack(
         dataset_name,
         overview,
         quality,
         readiness,
         healthcare,
+        dataset_intelligence,
         executive_summary,
         action_recommendations,
         intervention_recommendations,
@@ -353,6 +368,7 @@ def run_pipeline(
     printable_reports = build_printable_reports(executive_report_pack, compliance_governance_summary)
     stakeholder_bundle = build_stakeholder_export_bundle(
         executive_report_pack,
+        dataset_intelligence,
         kpi_benchmarking,
         intervention_recommendations,
         healthcare.get('explainability_fairness', {}),
@@ -360,8 +376,8 @@ def run_pipeline(
         quality,
         compliance_governance_summary,
     )
-    dataset_onboarding = build_dataset_onboarding_summary(dataset_name, source_meta, {'readiness': readiness, 'remediation': remediation, 'remediation_context': remediation_context})
-    demo_mode_content = build_demo_mode_content(dataset_name, source_meta, {'readiness': readiness, 'remediation_context': remediation_context}, demo_config)
+    dataset_onboarding = build_dataset_onboarding_summary(dataset_name, source_meta, {'readiness': readiness, 'remediation': remediation, 'remediation_context': remediation_context, 'dataset_intelligence': dataset_intelligence})
+    demo_mode_content = build_demo_mode_content(dataset_name, source_meta, {'readiness': readiness, 'remediation_context': remediation_context, 'dataset_intelligence': dataset_intelligence}, demo_config)
     documentation_support = build_documentation_support(dataset_name, {'readiness': readiness, 'healthcare': healthcare, 'remediation_context': remediation_context})
     screenshot_support = build_screenshot_support(dataset_name, {'readiness': readiness, 'remediation_context': remediation_context})
     app_metadata = build_app_metadata({'readiness': readiness, 'remediation_context': remediation_context})
@@ -391,6 +407,7 @@ def run_pipeline(
         'scenario_studio': scenario_studio,
         'prioritized_insights': prioritized_insights,
         'compliance_governance_summary': compliance_governance_summary,
+        'dataset_intelligence': dataset_intelligence,
         'executive_report_pack': executive_report_pack,
         'printable_reports': printable_reports,
         'stakeholder_export_bundle': stakeholder_bundle,
@@ -764,6 +781,7 @@ def render_data_intake(pipeline: dict[str, Any], dataset_name: str, source_meta:
     st.subheader('Data Intake')
     structure = pipeline['structure']
     temporal_context = pipeline.get('temporal_context', {})
+    intelligence = pipeline.get('dataset_intelligence', {})
     st.caption('Start with onboarding guidance, lineage, workflow packs, snapshots, linked analysis, and comparison tools.')
     st.markdown('### Data Ingestion Wizard')
     st.write('**1. Source selection**')
@@ -785,6 +803,8 @@ def render_data_intake(pipeline: dict[str, Any], dataset_name: str, source_meta:
     demo_mode = pipeline.get('demo_mode_content', {})
     if demo_mode:
         st.caption(str(demo_mode.get('intro', 'Use the guided flow below to walk through the strongest parts of the platform.')))
+        if intelligence.get('dataset_type_label'):
+            st.write(f"**Dataset type:** {intelligence.get('dataset_type_label')}")
         for step in demo_mode.get('recommended_flow', []):
             st.write(f'- {step}')
         with st.expander('Demo highlights checklist'):
@@ -824,6 +844,8 @@ def render_data_intake(pipeline: dict[str, Any], dataset_name: str, source_meta:
     onboarding_summary = onboarding.get('dataset_onboarding_summary', {})
     if onboarding_summary:
         st.write(str(onboarding_summary.get('suitability', 'This dataset is ready for schema-flexible analytics and walkthrough review.')))
+        if intelligence.get('dataset_type_label'):
+            st.write(f"**Dataset intelligence type:** {intelligence.get('dataset_type_label')}")
         st.caption(str(onboarding_summary.get('synthetic_note', '')))
     info_or_table(safe_df(onboarding.get('module_unlock_guide')), 'No module unlock guide is available yet.')
     info_or_table(safe_df(onboarding.get('data_upgrade_suggestions')), 'No data upgrade suggestions are available yet.')
@@ -963,6 +985,32 @@ def render_overview(pipeline: dict[str, Any]) -> None:
     if remediation.get('synthetic_readmission', {}).get('available'):
         st.caption('Readmission support is synthetic and intended for workflow demonstration rather than clinical truth.')
     st.dataframe(pipeline['data'].head(20), width='stretch')
+    intelligence = pipeline.get('dataset_intelligence', {})
+    if intelligence:
+        summary = intelligence.get('dataset_intelligence_summary', {})
+        st.markdown('### Dataset Intelligence Summary')
+        metric_row([
+            ('Dataset Type', str(summary.get('dataset_type', 'Not classified'))),
+            ('Healthcare Coverage', str(summary.get('healthcare_coverage', 'Not available'))),
+            ('Analytics Readiness', str(summary.get('analytics_readiness', 'Not available'))),
+            ('Enabled / Blocked', f"{summary.get('enabled_modules', 0)} / {summary.get('blocked_modules', 0)}"),
+        ])
+        st.caption(str(intelligence.get('dataset_type_rationale', '')))
+        st.caption(str(intelligence.get('support_disclosure_note', '')))
+        st.markdown('### Analytics Capability Matrix')
+        info_or_table(safe_df(intelligence.get('analytics_capability_matrix')), 'No analytics capability matrix is available yet.')
+        st.markdown('### Why Some Analytics Are Blocked')
+        blocked = safe_df(intelligence.get('blocker_explanations'))
+        partial = safe_df(intelligence.get('partial_support_explanations'))
+        if blocked.empty and partial.empty:
+            st.info('The current dataset has no major blocked or partially supported analytics in scope.')
+        else:
+            if not blocked.empty:
+                info_or_table(blocked, 'No blocked analytics explanations are available.')
+            if not partial.empty:
+                info_or_table(partial, 'No partial-support explanations are available.')
+        st.markdown('### Highest-Impact Data Upgrades')
+        info_or_table(safe_df(intelligence.get('highest_impact_upgrades')), 'No upgrade recommendations are available yet.')
     st.markdown('### Compliance handoff snapshot')
     info_or_table(compliance_snapshot(pipeline), 'Compliance handoff details are not available yet.')
     st.markdown('### Compliance & Governance Summary')
@@ -2008,6 +2056,7 @@ def render_export_center(pipeline: dict[str, Any], dataset_name: str, source_met
     executive_pack = pipeline.get('executive_report_pack', {})
     printable = pipeline.get('printable_reports', {})
     stakeholder_bundle = pipeline.get('stakeholder_export_bundle', {})
+    intelligence = pipeline.get('dataset_intelligence', {})
     st.markdown('### Executive Report Pack')
     if executive_pack:
         info_or_table(
@@ -2016,6 +2065,10 @@ def render_export_center(pipeline: dict[str, Any], dataset_name: str, source_met
         )
         st.download_button('Download executive report pack TXT', data=protect(executive_pack.get('executive_report_text', '').encode('utf-8')), file_name='executive_report_pack.txt', mime='text/plain', disabled=not export_allowed)
         st.download_button('Download executive report pack Markdown', data=protect(executive_pack.get('executive_report_markdown', '').encode('utf-8')), file_name='executive_report_pack.md', mime='text/markdown', disabled=not export_allowed)
+    if intelligence:
+        st.markdown('### Dataset Intelligence Summary')
+        info_or_table(safe_df(intelligence.get('analytics_capability_matrix')).head(8), 'No dataset intelligence summary is available yet.')
+        info_or_table(safe_df(intelligence.get('highest_impact_upgrades')), 'No data upgrade guidance is available yet.')
     st.markdown('### Print-Friendly Reports')
     if printable:
         st.download_button('Download print-friendly executive report', data=protect(printable.get('printable_executive_report', '').encode('utf-8')), file_name='printable_executive_report.txt', mime='text/plain', disabled=not export_allowed)

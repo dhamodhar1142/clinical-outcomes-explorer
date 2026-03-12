@@ -55,16 +55,24 @@ class PresentationSupportTests(unittest.TestCase):
             'executive_summary_verbosity': 'Detailed',
             'scenario_simulation_mode': 'Expanded',
         }
-        return overview, quality, readiness, healthcare, executive_summary, action_recs, intervention_recs, kpi, scenarios, prioritized, remediation, demo_config
+        dataset_intelligence = {
+            'dataset_type_label': 'Clinical / patient-level dataset',
+            'enabled_analytics': ['Data Profiling', 'Risk Segmentation', 'Export / Executive Reporting'],
+            'blocked_analytics': ['Cost Driver Analysis'],
+            'next_best_actions': ['Add a native cost field to unlock stronger financial analytics.'],
+            'analytics_capability_matrix': pd.DataFrame([{'analytics_module': 'Data Profiling', 'status': 'enabled', 'support': 'native'}]),
+        }
+        return overview, quality, readiness, healthcare, dataset_intelligence, executive_summary, action_recs, intervention_recs, kpi, scenarios, prioritized, remediation, demo_config
 
     def test_executive_report_pack_generation(self):
-        overview, quality, readiness, healthcare, executive_summary, action_recs, intervention_recs, kpi, scenarios, prioritized, remediation, demo_config = self._sample_pipeline_bits()
+        overview, quality, readiness, healthcare, dataset_intelligence, executive_summary, action_recs, intervention_recs, kpi, scenarios, prioritized, remediation, demo_config = self._sample_pipeline_bits()
         report = build_executive_report_pack(
             'demo.csv',
             overview,
             quality,
             readiness,
             healthcare,
+            dataset_intelligence,
             executive_summary,
             action_recs,
             intervention_recs,
@@ -76,10 +84,11 @@ class PresentationSupportTests(unittest.TestCase):
         )
         self.assertIn('executive_report_markdown', report)
         self.assertIn('Synthetic Support Disclosures', report['executive_report_sections'])
+        self.assertIn('Dataset Intelligence Summary', report['executive_report_sections'])
 
     def test_printable_report_outputs(self):
-        overview, quality, readiness, healthcare, executive_summary, action_recs, intervention_recs, kpi, scenarios, prioritized, remediation, demo_config = self._sample_pipeline_bits()
-        report = build_executive_report_pack('demo.csv', overview, quality, readiness, healthcare, executive_summary, action_recs, intervention_recs, kpi, scenarios, prioritized, remediation, demo_config)
+        overview, quality, readiness, healthcare, dataset_intelligence, executive_summary, action_recs, intervention_recs, kpi, scenarios, prioritized, remediation, demo_config = self._sample_pipeline_bits()
+        report = build_executive_report_pack('demo.csv', overview, quality, readiness, healthcare, dataset_intelligence, executive_summary, action_recs, intervention_recs, kpi, scenarios, prioritized, remediation, demo_config)
         compliance = build_compliance_governance_summary(
             {'combined_readiness_score': 55.0, 'badge_text': 'Moderate'},
             {'hipaa': {'risk_level': 'Moderate', 'direct_identifier_count': 2}},
@@ -92,8 +101,8 @@ class PresentationSupportTests(unittest.TestCase):
         self.assertIn('printable_compliance_summary', printable)
 
     def test_stakeholder_export_bundle_manifest(self):
-        overview, quality, readiness, healthcare, executive_summary, action_recs, intervention_recs, kpi, scenarios, prioritized, remediation, demo_config = self._sample_pipeline_bits()
-        report = build_executive_report_pack('demo.csv', overview, quality, readiness, healthcare, executive_summary, action_recs, intervention_recs, kpi, scenarios, prioritized, remediation, demo_config)
+        overview, quality, readiness, healthcare, dataset_intelligence, executive_summary, action_recs, intervention_recs, kpi, scenarios, prioritized, remediation, demo_config = self._sample_pipeline_bits()
+        report = build_executive_report_pack('demo.csv', overview, quality, readiness, healthcare, dataset_intelligence, executive_summary, action_recs, intervention_recs, kpi, scenarios, prioritized, remediation, demo_config)
         compliance = build_compliance_governance_summary(
             {'combined_readiness_score': 55.0, 'badge_text': 'Moderate'},
             {'hipaa': {'risk_level': 'Moderate', 'direct_identifier_count': 2}},
@@ -101,11 +110,12 @@ class PresentationSupportTests(unittest.TestCase):
             remediation,
             readiness,
         )
-        bundle = build_stakeholder_export_bundle(report, kpi, intervention_recs, healthcare['explainability_fairness'], healthcare['readmission'], quality, compliance)
+        bundle = build_stakeholder_export_bundle(report, dataset_intelligence, kpi, intervention_recs, healthcare['explainability_fairness'], healthcare['readmission'], quality, compliance)
         self.assertFalse(bundle['export_bundle_manifest'].empty)
+        self.assertIn('Dataset Intelligence Summary', bundle['export_bundle_manifest']['bundle_item'].tolist())
 
     def test_run_history_and_audit_summary(self):
-        overview, quality, readiness, healthcare, executive_summary, action_recs, intervention_recs, kpi, scenarios, prioritized, remediation, demo_config = self._sample_pipeline_bits()
+        overview, quality, readiness, healthcare, dataset_intelligence, executive_summary, action_recs, intervention_recs, kpi, scenarios, prioritized, remediation, demo_config = self._sample_pipeline_bits()
         pipeline = {'overview': overview, 'remediation_context': remediation}
         entry = build_run_history_entry('demo.csv', pipeline, demo_config, {'best_model_name': 'Random Forest', 'fairness_review_mode': 'full', 'model_comparison_table': pd.DataFrame([{'model_name': 'RF'}])})
         history = update_run_history([], entry)
@@ -114,7 +124,7 @@ class PresentationSupportTests(unittest.TestCase):
         self.assertFalse(summary['audit_summary'].empty)
 
     def test_compliance_summary_and_landing_stability(self):
-        overview, quality, readiness, healthcare, executive_summary, action_recs, intervention_recs, kpi, scenarios, prioritized, remediation, demo_config = self._sample_pipeline_bits()
+        overview, quality, readiness, healthcare, dataset_intelligence, executive_summary, action_recs, intervention_recs, kpi, scenarios, prioritized, remediation, demo_config = self._sample_pipeline_bits()
         compliance = build_compliance_governance_summary(
             {'combined_readiness_score': 55.0, 'badge_text': 'Moderate'},
             {'hipaa': {'risk_level': 'Moderate', 'direct_identifier_count': 2}},
