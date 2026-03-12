@@ -56,6 +56,17 @@ Real-world healthcare and operational datasets are rarely clean, fully mapped, o
   - compliance and governance outputs
   - stakeholder export bundle support
 
+## Platform Demo
+
+### Dataset Intelligence Summary
+![Dataset Intelligence Summary](docs/screenshots/dataset_intelligence_summary.png)
+
+### Analytics Capability Matrix
+![Analytics Capability Matrix](docs/screenshots/analytics_capability_matrix.png)
+
+### Export Center
+![Export Center](docs/screenshots/export_center.png)
+
 ## Architecture summary
 
 The app keeps a modular Python architecture built around a single Streamlit entrypoint.
@@ -163,6 +174,8 @@ Optional packages are listed in `requirements-optional.txt`:
   - enables optional model comparison support when available
 - `openai`
   - supports optional enhanced AI Copilot explanation mode if configured
+- `playwright`
+  - enables automated screenshot generation for demo assets
 
 The app degrades safely when optional packages are not installed.
 
