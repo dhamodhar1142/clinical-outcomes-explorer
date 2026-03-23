@@ -4,6 +4,8 @@ from typing import Any
 
 import pandas as pd
 
+from src.result_accuracy import weight_recommendation_frame
+
 
 def _safe_df(table: Any) -> pd.DataFrame:
     return table if isinstance(table, pd.DataFrame) else pd.DataFrame()
@@ -175,7 +177,19 @@ def build_intervention_recommendations(
             ]
         )
     frame['priority_rank'] = frame['priority_bucket'].map(_priority_rank)
-    frame = frame.sort_values(['priority_rank', 'confidence_level', 'recommendation_title'], ascending=[True, True, True]).drop(columns=['priority_rank']).reset_index(drop=True)
+    frame['base_priority_score'] = frame['priority_rank'].map({0: 100, 1: 80, 2: 60}).fillna(40)
+    frame = weight_recommendation_frame(
+        frame,
+        title_col='recommendation_title',
+        rationale_col='why_it_matters',
+        base_priority_col='base_priority_score',
+        healthcare=healthcare,
+        remediation_context=remediation_context,
+    )
+    frame = frame.sort_values(
+        ['priority_rank', 'weighted_priority_score', 'recommendation_title'],
+        ascending=[True, False, True],
+    ).drop(columns=['priority_rank']).reset_index(drop=True)
     return frame.head(10)
 
 
@@ -187,18 +201,43 @@ def build_executive_summary(
     action_recommendations: pd.DataFrame,
     intervention_recommendations: pd.DataFrame,
     remediation_context: dict[str, object],
+    trust_summary: dict[str, object] | None = None,
+    accuracy_summary: dict[str, object] | None = None,
     verbosity: str = 'concise',
 ) -> dict[str, object]:
+    trust_summary = trust_summary or {}
+    accuracy_summary = accuracy_summary or {}
     active_modules = int(readiness.get('available_count', 0))
+    analyzed_columns = int(overview.get('analyzed_columns', overview.get('columns', 0)))
+    source_columns = int(overview.get('source_columns', analyzed_columns))
+    helper_columns_added = int(overview.get('helper_columns_added', max(analyzed_columns - source_columns, 0)))
     blocked = _safe_df(readiness.get('readiness_table'))
     blocked_count = int((blocked.get('status', pd.Series(dtype=str)) == 'Unavailable').sum()) if not blocked.empty else 0
+    uncertainty_narrative = accuracy_summary.get('uncertainty_narrative', {}) if isinstance(accuracy_summary, dict) else {}
+    reporting_policy = accuracy_summary.get('reporting_policy', {}) if isinstance(accuracy_summary, dict) else {}
+    benchmark_profile = accuracy_summary.get('benchmark_profile', {}) if isinstance(accuracy_summary, dict) else {}
     sections = {
-        'Dataset Overview': f"{dataset_name} contains {int(overview.get('rows', 0)):,} rows and {int(overview.get('columns', 0)):,} columns for the current review.",
+        'Dataset Overview': f"{dataset_name} contains {int(overview.get('rows', 0)):,} rows and {analyzed_columns:,} analyzed columns for the current review.",
         'Current Readiness': f"{float(readiness.get('readiness_score', 0.0)):.0%} readiness with {active_modules} fully available modules and {blocked_count} blocked modules.",
         'Top Findings': '; '.join(_safe_df(healthcare.get('readmission', {}).get('high_risk_segments')).head(1).astype(str).agg(' | '.join, axis=1).tolist()) or 'Core healthcare analytics are available for operational review.',
         'Top Data Issues': f"{int(overview.get('duplicate_rows', 0)):,} duplicate rows and {int(overview.get('missing_values', 0)):,} missing values are currently in scope.",
         'Recommended Next Actions': '; '.join(intervention_recommendations.head(3)['recommendation_title'].tolist()) if not intervention_recommendations.empty else '; '.join(action_recommendations.head(3)['recommendation_title'].tolist()),
-        'Synthetic Support Disclosure': 'Synthetic helper fields are currently supporting one or more blocked modules.' if remediation_context.get('helper_fields') is not None and not _safe_df(remediation_context.get('helper_fields')).empty else 'No synthetic helper fields are currently required.',
+        'Result Trust': str(
+            trust_summary.get(
+                'summary_text',
+                'Result trust disclosures are not yet available for the current workflow.',
+            )
+        ),
+        'Accuracy and Reporting Guardrails': (
+            f"{str(uncertainty_narrative.get('headline', 'Accuracy guardrails are not available yet.'))} "
+            f"Benchmark profile: {benchmark_profile.get('profile_name', 'Generic Healthcare')}. "
+            f"Reporting policy: {reporting_policy.get('profile_name', 'Standard')}."
+        ),
+        'Synthetic Support Disclosure': (
+            f"Synthetic or derived helper support added {helper_columns_added} analyzed columns on top of {source_columns:,} source columns."
+            if helper_columns_added > 0
+            else 'No synthetic helper fields are currently required.'
+        ),
     }
     bullets = [
         sections['Dataset Overview'],
@@ -207,8 +246,9 @@ def build_executive_summary(
     ]
     if str(verbosity).lower() == 'detailed':
         bullets.extend([
-            sections['KPI Summary'],
-            sections['Synthetic Support Disclosures'],
+            sections['Result Trust'],
+            sections['Accuracy and Reporting Guardrails'],
+            sections['Synthetic Support Disclosure'],
         ])
     recruiter_summary = (
         f"{dataset_name} is currently running a healthcare-aware analytics workflow with {active_modules} active modules, "
@@ -459,7 +499,15 @@ def build_prioritized_insights(
             'remediation_opportunities': pd.DataFrame(),
         }
 
-    frame = frame.sort_values(['priority_score', 'category'], ascending=[False, True]).reset_index(drop=True)
+    frame = weight_recommendation_frame(
+        frame,
+        title_col='finding',
+        rationale_col='why_it_matters',
+        base_priority_col='priority_score',
+        healthcare=healthcare,
+        remediation_context={},
+    )
+    frame = frame.sort_values(['weighted_priority_score', 'category'], ascending=[False, True]).reset_index(drop=True)
     return {
         'available': True,
         'prioritized_insights': frame,

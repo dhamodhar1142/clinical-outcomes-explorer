@@ -1,8 +1,20 @@
 ﻿from __future__ import annotations
 
+import gc
+import hashlib
+from pathlib import Path
+import pickle
+import shutil
+from time import perf_counter
+from typing import Any
+
 import pandas as pd
 
-from src.schema_detection import StructureSummary
+from src.schema_detection import StructureSummary, detect_structure
+
+
+PROFILE_CACHE_ROOT = Path('data') / 'cache' / 'profiles'
+PROFILE_CACHE_VERSION = 'v3'
 
 
 def _cardinality_label(unique_count: int, non_null_count: int, inferred_type: str) -> str:
@@ -35,25 +47,318 @@ def _analysis_sample(data: pd.DataFrame, sample_size: int = 10000, large_sample_
         return data.sample(min(len(data), sample_size), random_state=42)
     return data
 
-def analysis_sample_info(data: pd.DataFrame, sample_size: int = 10000, large_sample_size: int = 20000, quality_sample_size: int = 15000, quality_large_sample_size: int = 25000) -> dict[str, int | bool]:
-    profile_sample_rows = len(_analysis_sample(data, sample_size=sample_size, large_sample_size=large_sample_size))
-    quality_sample_rows = len(_analysis_sample(data, sample_size=quality_sample_size, large_sample_size=quality_large_sample_size))
-    total_rows = len(data)
+
+def _sampling_plan(sampling_plan: dict[str, int] | None = None) -> dict[str, int]:
+    plan = dict(sampling_plan or {})
+    return {
+        'profile_sample_rows': int(plan.get('profile_sample_rows', 10_000)),
+        'profile_large_sample_rows': int(plan.get('profile_large_sample_rows', 20_000)),
+        'quality_sample_rows': int(plan.get('quality_sample_rows', 15_000)),
+        'quality_large_sample_rows': int(plan.get('quality_large_sample_rows', 25_000)),
+        'very_large_dataset_rows': int(plan.get('very_large_dataset_rows', 100_000)),
+        'profile_name': str(plan.get('profile_name', 'Standard')),
+    }
+
+
+def default_profile_cache_metrics() -> dict[str, Any]:
+    return {
+        'requests': 0,
+        'hits': 0,
+        'misses': 0,
+        'structure_requests': 0,
+        'structure_hits': 0,
+        'field_profile_requests': 0,
+        'field_profile_hits': 0,
+        'quality_requests': 0,
+        'quality_hits': 0,
+        'saved_ms': 0.0,
+        'last_cache_name': '',
+        'last_hit': False,
+        'last_latency_ms': 0.0,
+        'last_saved_ms': 0.0,
+        'last_dataset_version_hash': '',
+        'last_config_hash': '',
+        'last_cache_key': '',
+        'last_generated_ms': 0.0,
+        'clear_count': 0,
+    }
+
+
+def _dataset_version_hash(data: pd.DataFrame) -> str:
+    return str(data.attrs.get('dataset_cache_key', '')).strip()
+
+
+def _config_hash(plan: dict[str, int]) -> str:
+    raw_signature = (
+        f"{plan['profile_name']}:"
+        f"{plan['profile_sample_rows']}:"
+        f"{plan['profile_large_sample_rows']}:"
+        f"{plan['quality_sample_rows']}:"
+        f"{plan['quality_large_sample_rows']}:"
+        f"{plan['very_large_dataset_rows']}"
+    )
+    return hashlib.sha256(raw_signature.encode('utf-8')).hexdigest()[:16]
+
+
+def _cache_key(data: pd.DataFrame, plan: dict[str, int], suffix: str) -> str | None:
+    dataset_cache_key = _dataset_version_hash(data)
+    if not dataset_cache_key:
+        return None
+    return f"{PROFILE_CACHE_VERSION}-{dataset_cache_key}-{_config_hash(plan)}-{suffix}"
+
+
+def _cache_path(cache_key: str | None) -> Path | None:
+    if not cache_key:
+        return None
+    PROFILE_CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+    return PROFILE_CACHE_ROOT / f'{cache_key}.pkl'
+
+
+def _read_cached_value(cache_key: str | None):
+    path = _cache_path(cache_key)
+    if path is None or not path.exists():
+        return None
+    try:
+        with path.open('rb') as handle:
+            cached = pickle.load(handle)
+            if isinstance(cached, dict) and 'value' in cached:
+                return cached
+            return {
+                'value': cached,
+                'generation_latency_ms': 0.0,
+                'cache_version': PROFILE_CACHE_VERSION,
+                'dataset_version_hash': '',
+                'config_hash': '',
+                'cache_key': cache_key or '',
+            }
+    except Exception:
+        return None
+
+
+def _write_cached_value(
+    cache_key: str | None,
+    value,
+    *,
+    generation_latency_ms: float = 0.0,
+    dataset_version_hash: str = '',
+    config_hash: str = '',
+) -> None:
+    path = _cache_path(cache_key)
+    if path is None:
+        return
+    try:
+        with path.open('wb') as handle:
+            pickle.dump(
+                {
+                    'value': value,
+                    'generation_latency_ms': float(generation_latency_ms),
+                    'cache_version': PROFILE_CACHE_VERSION,
+                    'dataset_version_hash': dataset_version_hash,
+                    'config_hash': config_hash,
+                    'cache_key': cache_key or '',
+                },
+                handle,
+            )
+    except Exception:
+        return
+
+
+def _cached_payload(cached) -> tuple[Any, dict[str, Any]]:
+    if isinstance(cached, dict) and 'value' in cached:
+        return cached.get('value'), {
+            'generation_latency_ms': float(cached.get('generation_latency_ms', 0.0) or 0.0),
+            'dataset_version_hash': str(cached.get('dataset_version_hash', '') or ''),
+            'config_hash': str(cached.get('config_hash', '') or ''),
+            'cache_key': str(cached.get('cache_key', '') or ''),
+        }
+    return cached, {
+        'generation_latency_ms': 0.0,
+        'dataset_version_hash': '',
+        'config_hash': '',
+        'cache_key': '',
+    }
+
+
+def _record_cache_metric(
+    cache_metrics: dict[str, Any] | None,
+    *,
+    cache_name: str,
+    hit: bool,
+    latency_ms: float,
+    saved_ms: float,
+    dataset_version_hash: str,
+    config_hash: str,
+    cache_key: str,
+    generated_ms: float,
+) -> None:
+    if cache_metrics is None:
+        return
+    defaults = default_profile_cache_metrics()
+    for key, value in defaults.items():
+        cache_metrics.setdefault(key, value)
+    cache_metrics['requests'] += 1
+    cache_metrics['hits'] += int(hit)
+    cache_metrics['misses'] += int(not hit)
+    cache_metrics[f'{cache_name}_requests'] += 1
+    cache_metrics[f'{cache_name}_hits'] += int(hit)
+    cache_metrics['saved_ms'] = float(cache_metrics.get('saved_ms', 0.0)) + float(saved_ms)
+    cache_metrics['last_cache_name'] = cache_name
+    cache_metrics['last_hit'] = bool(hit)
+    cache_metrics['last_latency_ms'] = float(latency_ms)
+    cache_metrics['last_saved_ms'] = float(saved_ms)
+    cache_metrics['last_dataset_version_hash'] = dataset_version_hash
+    cache_metrics['last_config_hash'] = config_hash
+    cache_metrics['last_cache_key'] = cache_key
+    cache_metrics['last_generated_ms'] = float(generated_ms)
+
+
+def clear_profile_cache(cache_metrics: dict[str, Any] | None = None) -> dict[str, Any]:
+    if PROFILE_CACHE_ROOT.exists():
+        shutil.rmtree(PROFILE_CACHE_ROOT, ignore_errors=True)
+    if cache_metrics is None:
+        return default_profile_cache_metrics()
+    clear_count = int(cache_metrics.get('clear_count', 0)) + 1
+    cache_metrics.clear()
+    cache_metrics.update(default_profile_cache_metrics())
+    cache_metrics['clear_count'] = clear_count
+    return cache_metrics
+
+
+def build_profile_cache_summary(cache_metrics: dict[str, Any] | None) -> dict[str, Any]:
+    metrics = default_profile_cache_metrics()
+    metrics.update(cache_metrics or {})
+    requests = int(metrics.get('requests', 0))
+    hits = int(metrics.get('hits', 0))
+    hit_rate = hits / requests if requests else 0.0
+    structure_requests = int(metrics.get('structure_requests', 0))
+    structure_hits = int(metrics.get('structure_hits', 0))
+    field_profile_requests = int(metrics.get('field_profile_requests', 0))
+    field_profile_hits = int(metrics.get('field_profile_hits', 0))
+    summary_cards = [
+        {'label': 'Profile Cache Hit Rate', 'value': f'{hit_rate:.1%}' if requests else 'No requests yet'},
+        {'label': 'Cache Requests', 'value': f'{requests:,}'},
+        {'label': 'Saved Latency', 'value': f"{float(metrics.get('saved_ms', 0.0)):.0f} ms"},
+        {'label': 'Dataset Version Hash', 'value': str(metrics.get('last_dataset_version_hash', '') or 'Not available')[:12]},
+    ]
+    settings_table = pd.DataFrame(
+        [
+            {
+                'cache_area': 'Column Detection',
+                'requests': structure_requests,
+                'hit_rate': f"{(structure_hits / structure_requests):.1%}" if structure_requests else 'No requests yet',
+                'last_latency_ms': float(metrics.get('last_latency_ms', 0.0)) if metrics.get('last_cache_name') == 'structure' else pd.NA,
+                'cache_key': str(metrics.get('last_cache_key', '') or 'Not available') if metrics.get('last_cache_name') == 'structure' else 'See most recent matching request',
+            },
+            {
+                'cache_area': 'Field Profiling',
+                'requests': field_profile_requests,
+                'hit_rate': f"{(field_profile_hits / field_profile_requests):.1%}" if field_profile_requests else 'No requests yet',
+                'last_latency_ms': float(metrics.get('last_latency_ms', 0.0)) if metrics.get('last_cache_name') == 'field_profile' else pd.NA,
+                'cache_key': str(metrics.get('last_cache_key', '') or 'Not available') if metrics.get('last_cache_name') == 'field_profile' else 'See most recent matching request',
+            },
+        ]
+    )
+    return {
+        'summary_cards': summary_cards,
+        'settings_table': settings_table,
+        'notes': [
+            'Cache invalidation occurs automatically when the dataset version hash or active large-dataset profile changes.',
+            'Latency savings are session-based estimates comparing cache-hit retrieval time with the original cached generation time.',
+        ],
+        'hit_rate': hit_rate,
+    }
+
+def analysis_sample_info(data: pd.DataFrame, sample_size: int = 10000, large_sample_size: int = 20000, quality_sample_size: int = 15000, quality_large_sample_size: int = 25000, sampling_plan: dict[str, int] | None = None) -> dict[str, int | bool]:
+    plan = _sampling_plan(sampling_plan)
+    profile_sample_rows = len(_analysis_sample(data, sample_size=plan['profile_sample_rows'], large_sample_size=plan['profile_large_sample_rows']))
+    quality_sample_rows = len(_analysis_sample(data, sample_size=plan['quality_sample_rows'], large_sample_size=plan['quality_large_sample_rows']))
+    total_rows = int(data.attrs.get('source_row_count', len(data)))
     return {
         'total_rows': int(total_rows),
+        'analyzed_rows': int(len(data)),
         'profile_sample_rows': int(profile_sample_rows),
         'quality_sample_rows': int(quality_sample_rows),
         'sampling_applied': profile_sample_rows < total_rows or quality_sample_rows < total_rows,
-        'very_large_dataset': total_rows > 100000,
+        'very_large_dataset': total_rows > plan['very_large_dataset_rows'],
+        'sampling_plan_name': str(plan.get('profile_name', 'Standard')),
+        'sampling_mode': str(data.attrs.get('sampling_mode', 'full')),
+        'ingestion_strategy': str(data.attrs.get('ingestion_strategy', 'standard')),
     }
+
+
+def build_structure_profile_bundle(
+    data: pd.DataFrame,
+    *,
+    sampling_plan: dict[str, int] | None = None,
+    cache_metrics: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    plan = _sampling_plan(sampling_plan)
+    dataset_version_hash = _dataset_version_hash(data)
+    config_hash = _config_hash(plan)
+    structure_cache_key = _cache_key(data, plan, 'structure')
+    structure_start = perf_counter()
+    cached_structure = _read_cached_value(structure_cache_key)
+    if cached_structure is not None:
+        structure, structure_meta = _cached_payload(cached_structure)
+        structure_latency_ms = (perf_counter() - structure_start) * 1000
+        _record_cache_metric(
+            cache_metrics,
+            cache_name='structure',
+            hit=True,
+            latency_ms=structure_latency_ms,
+            saved_ms=max(float(structure_meta.get('generation_latency_ms', 0.0)) - structure_latency_ms, 0.0),
+            dataset_version_hash=dataset_version_hash or str(structure_meta.get('dataset_version_hash', '')),
+            config_hash=config_hash or str(structure_meta.get('config_hash', '')),
+            cache_key=structure_cache_key or '',
+            generated_ms=float(structure_meta.get('generation_latency_ms', 0.0)),
+        )
+    else:
+        structure = detect_structure(data)
+        structure_latency_ms = (perf_counter() - structure_start) * 1000
+        _write_cached_value(
+            structure_cache_key,
+            structure,
+            generation_latency_ms=structure_latency_ms,
+            dataset_version_hash=dataset_version_hash,
+            config_hash=config_hash,
+        )
+        _record_cache_metric(
+            cache_metrics,
+            cache_name='structure',
+            hit=False,
+            latency_ms=structure_latency_ms,
+            saved_ms=0.0,
+            dataset_version_hash=dataset_version_hash,
+            config_hash=config_hash,
+            cache_key=structure_cache_key or '',
+            generated_ms=structure_latency_ms,
+        )
+    field_profile = build_field_profile(
+        data,
+        structure,
+        sampling_plan=plan,
+        cache_metrics=cache_metrics,
+    )
+    return {
+        'structure': structure,
+        'field_profile': field_profile,
+        'dataset_version_hash': dataset_version_hash,
+        'config_hash': config_hash,
+        'structure_cache_key': structure_cache_key or '',
+        'field_profile_cache_key': _cache_key(data, plan, 'field_profile') or '',
+    }
+
 
 def build_dataset_overview(data: pd.DataFrame, memory_mb: float) -> dict[str, float | int]:
     return {
-        'rows': int(len(data)),
+        'rows': int(data.attrs.get('source_row_count', len(data))),
+        'analyzed_rows': int(len(data)),
         'columns': int(len(data.columns)),
         'duplicate_rows': int(data.duplicated().sum()),
         'missing_values': int(data.isna().sum().sum()),
         'memory_mb': float(memory_mb),
+        'sampling_mode': str(data.attrs.get('sampling_mode', 'full')),
+        'ingestion_strategy': str(data.attrs.get('ingestion_strategy', 'standard')),
     }
 
 
@@ -67,8 +372,36 @@ def _top_values(series: pd.Series, limit: int = 5) -> str:
     return '; '.join(f'{idx} ({count})' for idx, count in counts.items())
 
 
-def build_field_profile(data: pd.DataFrame, structure: StructureSummary, sample_size: int = 10000) -> pd.DataFrame:
-    analysis_df = _analysis_sample(data, sample_size=sample_size, large_sample_size=20000)
+def build_field_profile(
+    data: pd.DataFrame,
+    structure: StructureSummary,
+    sample_size: int = 10000,
+    sampling_plan: dict[str, int] | None = None,
+    cache_metrics: dict[str, Any] | None = None,
+) -> pd.DataFrame:
+    plan = _sampling_plan(sampling_plan)
+    cache_key = _cache_key(data, plan, 'field_profile')
+    dataset_version_hash = _dataset_version_hash(data)
+    config_hash = _config_hash(plan)
+    started = perf_counter()
+    cached = _read_cached_value(cache_key)
+    if cached is not None:
+        cached_value, cached_meta = _cached_payload(cached)
+        if isinstance(cached_value, pd.DataFrame):
+            latency_ms = (perf_counter() - started) * 1000
+            _record_cache_metric(
+                cache_metrics,
+                cache_name='field_profile',
+                hit=True,
+                latency_ms=latency_ms,
+                saved_ms=max(float(cached_meta.get('generation_latency_ms', 0.0)) - latency_ms, 0.0),
+                dataset_version_hash=dataset_version_hash or str(cached_meta.get('dataset_version_hash', '')),
+                config_hash=config_hash or str(cached_meta.get('config_hash', '')),
+                cache_key=cache_key or '',
+                generated_ms=float(cached_meta.get('generation_latency_ms', 0.0)),
+            )
+            return cached_value.copy()
+    analysis_df = _analysis_sample(data, sample_size=plan['profile_sample_rows'], large_sample_size=plan['profile_large_sample_rows'])
     rows: list[dict[str, object]] = []
     detection_lookup = structure.detection_table.set_index('column_name').to_dict('index') if not structure.detection_table.empty else {}
 
@@ -133,12 +466,62 @@ def build_field_profile(data: pd.DataFrame, structure: StructureSummary, sample_
             if not dt.empty:
                 row.update({'min_date': str(dt.min()), 'max_date': str(dt.max())})
         rows.append(row)
-    return pd.DataFrame(rows)
+    result = pd.DataFrame(rows)
+    generation_latency_ms = (perf_counter() - started) * 1000
+    _write_cached_value(
+        cache_key,
+        result,
+        generation_latency_ms=generation_latency_ms,
+        dataset_version_hash=dataset_version_hash,
+        config_hash=config_hash,
+    )
+    _record_cache_metric(
+        cache_metrics,
+        cache_name='field_profile',
+        hit=False,
+        latency_ms=generation_latency_ms,
+        saved_ms=0.0,
+        dataset_version_hash=dataset_version_hash,
+        config_hash=config_hash,
+        cache_key=cache_key or '',
+        generated_ms=generation_latency_ms,
+    )
+    del analysis_df
+    gc.collect()
+    return result
 
 
-def build_quality_checks(data: pd.DataFrame, structure: StructureSummary, field_profile: pd.DataFrame) -> dict[str, pd.DataFrame | int]:
-    analysis_df = _analysis_sample(data, sample_size=15000, large_sample_size=25000)
-    high_missing = field_profile[field_profile['null_percentage'] >= 0.4][['column_name', 'null_percentage']].sort_values('null_percentage', ascending=False)
+def build_quality_checks(data: pd.DataFrame, structure: StructureSummary, field_profile: pd.DataFrame, sampling_plan: dict[str, int] | None = None) -> dict[str, pd.DataFrame | int]:
+    plan = _sampling_plan(sampling_plan)
+    cache_key = _cache_key(data, plan, 'quality_checks')
+    dataset_version_hash = _dataset_version_hash(data)
+    config_hash = _config_hash(plan)
+    started = perf_counter()
+    cached = _read_cached_value(cache_key)
+    if cached is not None:
+        cached_value, _ = _cached_payload(cached)
+        if isinstance(cached_value, dict):
+            _record_cache_metric(
+                data.attrs.get('profile_cache_metrics'),
+                cache_name='quality',
+                hit=True,
+                latency_ms=(perf_counter() - started) * 1000,
+                saved_ms=0.0,
+                dataset_version_hash=dataset_version_hash,
+                config_hash=config_hash,
+                cache_key=cache_key or '',
+                generated_ms=0.0,
+            )
+            return cached_value
+    analysis_df = _analysis_sample(data, sample_size=plan['quality_sample_rows'], large_sample_size=plan['quality_large_sample_rows'])
+    helper_field_names = {
+        str(name).strip()
+        for name in data.attrs.get('helper_field_names', [])
+        if str(name).strip()
+    }
+    high_missing_candidates = field_profile[field_profile['null_percentage'] >= 0.4][['column_name', 'null_percentage']].sort_values('null_percentage', ascending=False)
+    helper_missing = high_missing_candidates[high_missing_candidates['column_name'].astype(str).isin(helper_field_names)].reset_index(drop=True)
+    high_missing = high_missing_candidates[~high_missing_candidates['column_name'].astype(str).isin(helper_field_names)].reset_index(drop=True)
     near_constant = field_profile[(field_profile['uniqueness_percentage'] <= 0.02) & (field_profile['non_null_count'] > 0)][['column_name', 'uniqueness_percentage']]
     empty_columns = field_profile[field_profile['non_null_count'] == 0][['column_name']]
 
@@ -183,9 +566,10 @@ def build_quality_checks(data: pd.DataFrame, structure: StructureSummary, field_
     ])
     quality_score = max(100 - min(issue_count * 6, 45) - min(int(data.duplicated().mean() * 100), 20), 0)
 
-    return {
+    result = {
         'quality_score': quality_score,
         'high_missing': high_missing,
+        'suppressed_helper_missing': helper_missing,
         'near_constant': near_constant,
         'empty_columns': empty_columns,
         'suspicious_numeric_text': pd.DataFrame(suspicious_numeric_text_rows),
@@ -193,6 +577,16 @@ def build_quality_checks(data: pd.DataFrame, structure: StructureSummary, field_
         'duplicate_identifiers': pd.DataFrame(duplicate_identifier_rows),
         'numeric_outliers': pd.DataFrame(outlier_rows),
     }
+    _write_cached_value(
+        cache_key,
+        result,
+        generation_latency_ms=(perf_counter() - started) * 1000,
+        dataset_version_hash=dataset_version_hash,
+        config_hash=config_hash,
+    )
+    del analysis_df
+    gc.collect()
+    return result
 
 
 def build_numeric_summary(field_profile: pd.DataFrame) -> pd.DataFrame:

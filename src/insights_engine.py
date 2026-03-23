@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from src.result_accuracy import weight_recommendation_frame
+
 
 def build_key_insights(overview: dict[str, object], field_profile: pd.DataFrame, quality: dict[str, object], readiness: dict[str, object], semantic: dict[str, object], healthcare: dict[str, object], structure) -> dict[str, object]:
     summary_lines: list[str] = []
@@ -136,7 +138,16 @@ def build_action_recommendations(quality: dict[str, object], readiness: dict[str
     priority_order = {'High': 0, 'Medium': 1, 'Low': 2}
     frame = pd.DataFrame(recommendations).drop_duplicates(subset=['recommendation_title'])
     frame['priority_rank'] = frame['priority'].map(priority_order)
-    frame = frame.sort_values(['priority_rank', 'recommendation_title']).drop(columns=['priority_rank']).reset_index(drop=True)
+    frame['base_priority_score'] = frame['priority_rank'].map({0: 100, 1: 75, 2: 50}).fillna(40)
+    frame = weight_recommendation_frame(
+        frame,
+        title_col='recommendation_title',
+        rationale_col='rationale',
+        base_priority_col='base_priority_score',
+        healthcare=healthcare,
+        remediation_context={},
+    )
+    frame = frame.sort_values(['priority_rank', 'weighted_priority_score', 'recommendation_title'], ascending=[True, False, True]).drop(columns=['priority_rank']).reset_index(drop=True)
     return frame.head(8)
 
 
@@ -201,8 +212,11 @@ def build_automated_insight_board(
 
     if fairness.get('available') and not fairness.get('fairness_flags', pd.DataFrame()).empty:
         top_gap = fairness['fairness_flags'].iloc[0]
+        grouping_label = top_gap.get('grouping_dimension', top_gap.get('group_dimension', top_gap.get('subgroup', 'A subgroup')))
+        gap_value = top_gap.get('gap_value', top_gap.get('gap_size', 0.0))
+        metric_label = top_gap.get('metric', top_gap.get('flag_type', 'performance'))
         benchmark_gaps.append(
-            f"{top_gap['grouping_dimension']} shows a {top_gap['gap_value']:.1%} gap for {top_gap['metric']} in the current review."
+            f"{grouping_label} shows a {float(gap_value):.1%} gap for {metric_label} in the current review."
         )
 
     if cost.get('available'):
@@ -269,7 +283,7 @@ def build_automated_insight_board(
             'detail': 'Use the Readmission Cohort Builder to test discharge follow-up, case management, LOS reduction, and early follow-up scenarios.',
         }
 
-    if not findings and not risks and not recommendations and chart_spec is None:
+    if not findings and not risks and not recommendations and not benchmark_gaps and chart_spec is None:
         return {
             'available': False,
             'reason': 'The current dataset does not yet support a strong executive insight board. Start with Analysis Readiness, profiling, and remediation guidance to strengthen the available signals.',

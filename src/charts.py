@@ -7,16 +7,18 @@ from src.analytics import get_cost_per_day_by_diagnosis, get_highest_cost_depart
 from src.metrics import RISK_SEGMENTS, binary_rate, fill_missing_category, get_display_name, resolve_column
 
 
-DARK_LAYOUT = {
-    "template": "plotly_dark",
-    "paper_bgcolor": "#0b1727",
-    "plot_bgcolor": "#122338",
-    "font": {"color": "#e7f0fb"},
+LIGHT_LAYOUT = {
+    "template": "plotly",
+    "paper_bgcolor": "#CFE0ED",
+    "plot_bgcolor": "#E6F0F7",
+    "font": {"color": "#0F172A"},
 }
 
 
 def _style_figure(figure, yaxis_title: str, xaxis_title: str | None = None) -> None:
-    figure.update_layout(**DARK_LAYOUT, margin=dict(l=20, r=20, t=60, b=20), yaxis_title=yaxis_title, xaxis_title=xaxis_title, legend_title_text="")
+    figure.update_layout(**LIGHT_LAYOUT, margin=dict(l=20, r=20, t=60, b=20), yaxis_title=yaxis_title, xaxis_title=xaxis_title, legend_title_text="")
+    figure.update_xaxes(showgrid=False, zeroline=False, linecolor="#C9D7E5")
+    figure.update_yaxes(gridcolor="#D7E3EE", zeroline=False, linecolor="#C9D7E5")
 
 
 def create_cost_by_department_chart(data: pd.DataFrame):

@@ -676,6 +676,7 @@ def build_data_lineage_view(
     semantic: dict[str, object],
     readiness: dict[str, object],
     widget_state: dict[str, object],
+    accuracy_summary: dict[str, object] | None = None,
 ) -> dict[str, pd.DataFrame | list[str] | str]:
     source_rows = pd.DataFrame(
         [
@@ -722,11 +723,40 @@ def build_data_lineage_view(
     if not active_controls.empty:
         active_controls = active_controls.sort_values('analysis_control').reset_index(drop=True)
 
+    metric_lineage_table = pd.DataFrame()
+    approval_table = pd.DataFrame()
+    if isinstance(accuracy_summary, dict):
+        metric_lineage_table = accuracy_summary.get('metric_lineage_table')
+        metric_lineage_table = metric_lineage_table if isinstance(metric_lineage_table, pd.DataFrame) else pd.DataFrame()
+        approval_workflow = accuracy_summary.get('approval_workflow', {})
+        if isinstance(approval_workflow, dict) and approval_workflow:
+            approval_table = pd.DataFrame(
+                [
+                    {
+                        'review_stage': 'Mapping approval',
+                        'status': approval_workflow.get('mapping_status', 'Pending'),
+                        'detail': approval_workflow.get('review_notes', '') or 'Awaiting reviewer confirmation.',
+                    },
+                    {
+                        'review_stage': 'Trust gate',
+                        'status': approval_workflow.get('trust_gate_status', 'Pending'),
+                        'detail': f"Threshold profile: {approval_workflow.get('reporting_threshold_profile', 'Standard')}",
+                    },
+                    {
+                        'review_stage': 'Export eligibility',
+                        'status': approval_workflow.get('export_eligibility_status', 'Pending'),
+                        'detail': 'Controls whether governed external handoff is approved for the current dataset context.',
+                    },
+                ]
+            )
+
     return {
         'source_table': source_rows,
         'derived_fields_table': derived_rows,
         'transformation_steps': transformations,
         'active_controls_table': active_controls,
+        'metric_lineage_table': metric_lineage_table,
+        'approval_table': approval_table,
     }
 
 

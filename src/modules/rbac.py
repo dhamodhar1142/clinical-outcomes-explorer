@@ -3,7 +3,10 @@ from __future__ import annotations
 ROLE_PERMISSIONS = {
     'Admin': {'sensitive_review', 'standards_validation', 'exports', 'audit_review'},
     'Analyst': {'sensitive_review', 'standards_validation', 'exports'},
+    'Executive': {'standards_validation', 'exports'},
+    'Clinician': {'sensitive_review', 'standards_validation', 'exports'},
     'Researcher': {'sensitive_review', 'standards_validation'},
+    'Data Steward': {'sensitive_review', 'standards_validation', 'exports', 'audit_review'},
     'Viewer': {'standards_validation'},
 }
 

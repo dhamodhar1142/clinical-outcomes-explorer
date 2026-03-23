@@ -159,6 +159,7 @@ def augment_temporal_fields(data: pd.DataFrame) -> tuple[pd.DataFrame, dict[str,
         }
 
     augmented = data.copy()
+    augmented.attrs.update(getattr(data, 'attrs', {}))
     year_col = context.source_columns[0]
     year_values = pd.to_numeric(augmented[year_col], errors='coerce')
 

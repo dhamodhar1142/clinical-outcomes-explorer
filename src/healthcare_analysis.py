@@ -1,17 +1,25 @@
 ﻿from __future__ import annotations
 
+import math
 import re
 
 import pandas as pd
 
+from src.result_accuracy import add_comparison_stability_columns, add_rate_stability_columns
+
 
 HEALTHCARE_KEY_FIELDS = [
     'patient_id', 'member_id', 'encounter_id', 'claim_id', 'admission_date', 'discharge_date', 'service_date',
+    'encounter_status_code', 'encounter_status', 'encounter_type_code', 'encounter_type', 'room_id',
     'diagnosis_code', 'procedure_code', 'provider_id', 'provider_name', 'facility', 'payer', 'plan',
     'cost_amount', 'paid_amount', 'allowed_amount', 'billed_amount', 'length_of_stay', 'department',
     'smoking_status', 'cancer_stage', 'treatment_type', 'survived', 'bmi', 'cholesterol_level', 'comorbidities',
     'diagnosis_date', 'end_treatment_date',
 ]
+
+MAX_ANOMALY_DETAIL_ROWS = 250
+MAX_ANOMALY_REVIEW_ROWS = 120
+MAX_SIMILAR_RECORD_ROWS = 40
 
 
 def _first_available(canonical_map: dict[str, str], candidates: list[str]) -> str | None:
@@ -114,6 +122,129 @@ def _readmission_group_rate(frame: pd.DataFrame, group_col: str) -> pd.DataFrame
     return grouped.sort_values(['readmission_rate', 'record_count'], ascending=[False, False]).reset_index(drop=True)
 
 
+def _readmission_support_level(
+    present_fields: dict[str, str | None],
+    analyzable: list[str],
+    *,
+    has_row_level_support: bool,
+) -> tuple[str, float]:
+    core_fields = ['patient_id', 'event_date', 'readmission_flag', 'age', 'diagnosis', 'department', 'length_of_stay']
+    present_core = sum(1 for key in core_fields if present_fields.get(key))
+    support_score = present_core / len(core_fields)
+    if not has_row_level_support:
+        return 'Unavailable', support_score
+    if support_score >= 0.85 and len(analyzable) >= 5:
+        return 'Full', support_score
+    if support_score >= 0.45 and len(analyzable) >= 2:
+        return 'Partial', support_score
+    return 'Limited', support_score
+
+
+def _readmission_unlock_fields(missing_for_full: list[str]) -> list[str]:
+    priority = [
+        'readmission_flag',
+        'event_date',
+        'patient_id',
+        'discharge_date',
+        'diagnosis',
+        'department',
+        'length_of_stay',
+        'age',
+        'cost',
+    ]
+    ordered = [field for field in priority if field in missing_for_full]
+    for field in missing_for_full:
+        if field not in ordered:
+            ordered.append(field)
+    return ordered
+
+
+def _readmission_missing_field_labels(fields: list[str]) -> str:
+    return ', '.join(str(item).replace('_', ' ') for item in fields) if fields else 'no additional fields'
+
+
+def _build_readmission_guidance_notes(
+    support_level: str,
+    analyzable: list[str],
+    missing_for_full: list[str],
+    unlock_fields: list[str],
+) -> list[str]:
+    notes = []
+    if analyzable:
+        notes.append('What still works now: ' + ', '.join(analyzable) + '.')
+    if missing_for_full:
+        notes.append('What is missing: ' + _readmission_missing_field_labels(missing_for_full) + '.')
+    if unlock_fields:
+        notes.append('Add or map these fields next to unlock the full workflow: ' + _readmission_missing_field_labels(unlock_fields) + '.')
+    if support_level == 'Full':
+        notes.append('This dataset is ready for full readmission review, intervention planning, and handoff reporting.')
+    return notes
+
+
+def _build_readmission_intervention_recommendations(
+    high_risk_segments: pd.DataFrame,
+    driver_table: pd.DataFrame,
+) -> pd.DataFrame:
+    recommendations: list[dict[str, object]] = []
+    if isinstance(high_risk_segments, pd.DataFrame) and not high_risk_segments.empty:
+        top_segment = high_risk_segments.iloc[0]
+        recommendations.append(
+            {
+                'priority': 'Immediate',
+                'target_cohort': f"{top_segment['segment_type']} = {top_segment['segment_value']}",
+                'intervention': 'Enhanced discharge follow-up',
+                'why_it_matters': f"Current readmission rate is {float(top_segment['readmission_rate']):.1%} across {int(top_segment['record_count'])} records.",
+                'estimated_focus': 'Start with patients discharged from the highest-gap readmission segment.',
+            }
+        )
+    if isinstance(driver_table, pd.DataFrame) and not driver_table.empty:
+        top_driver = driver_table.iloc[0]
+        recommendations.append(
+            {
+                'priority': 'High',
+                'target_cohort': str(top_driver.get('driver_group', 'Highest-gap cohort')),
+                'intervention': 'Targeted case management',
+                'why_it_matters': f"{top_driver['factor']} is running {float(top_driver['gap_vs_overall']):.1%} above the overall readmission rate.",
+                'estimated_focus': 'Use targeted case management and post-discharge review for this cohort first.',
+            }
+        )
+    if len(recommendations) < 3:
+        recommendations.append(
+            {
+                'priority': 'High',
+                'target_cohort': 'Longer-stay patients',
+                'intervention': 'LOS reduction and early follow-up',
+                'why_it_matters': 'Longer stays often coincide with more complex discharge coordination and elevated readmission exposure.',
+                'estimated_focus': 'Pair LOS review with early follow-up scheduling for the longest-stay patients.',
+            }
+        )
+    return pd.DataFrame(recommendations)
+
+
+def _build_readmission_solution_summary_cards(
+    support_level: str,
+    analyzable: list[str],
+    unlock_fields: list[str],
+    *,
+    high_risk_segments: pd.DataFrame | None = None,
+    high_risk_patients: pd.DataFrame | None = None,
+) -> list[dict[str, str]]:
+    if isinstance(high_risk_segments, pd.DataFrame) and isinstance(high_risk_patients, pd.DataFrame):
+        top_patient_count = int((high_risk_patients['readmission_risk_segment'] == 'High Risk').sum()) if not high_risk_patients.empty else 0
+        return [
+            {'label': 'Workflow', 'value': 'Standalone readmission review'},
+            {'label': 'Support level', 'value': support_level},
+            {'label': 'High-risk segments', 'value': f'{len(high_risk_segments):,}'},
+            {'label': 'High-risk rows', 'value': f'{top_patient_count:,}'},
+        ]
+    return [
+        {'label': 'Workflow', 'value': 'Readmission readiness review'},
+        {'label': 'Support level', 'value': support_level},
+        {'label': 'Views still available', 'value': f'{len(analyzable):,}'},
+        {'label': 'Fields to add next', 'value': f'{len(unlock_fields):,}'},
+    ]
+
+
 
 def _risk_detail_frame(data: pd.DataFrame, canonical_map: dict[str, str]) -> pd.DataFrame:
     age_col = _resolve_column(data, canonical_map, ['age'], ['age'])
@@ -189,10 +320,28 @@ def assess_healthcare_dataset(canonical_map: dict[str, str], synthetic_fields: s
     synthetic_fields = synthetic_fields or set()
     hits = [field for field in HEALTHCARE_KEY_FIELDS if field in canonical_map]
     synthetic_hits = [field for field in hits if field in synthetic_fields]
-    score = min((len(hits) - (0.4 * len(synthetic_hits))) / 8, 1.0)
+    weighted_groups = {
+        'identity': (['patient_id', 'member_id', 'encounter_id', 'claim_id'], 0.24),
+        'timing': (['admission_date', 'discharge_date', 'service_date'], 0.24),
+        'encounter_context': (['encounter_status_code', 'encounter_status', 'encounter_type_code', 'encounter_type', 'room_id'], 0.18),
+        'clinical': (['diagnosis_code', 'procedure_code', 'department', 'length_of_stay'], 0.18),
+        'operational_financial': (['provider_id', 'provider_name', 'facility', 'payer', 'plan', 'cost_amount', 'paid_amount', 'allowed_amount', 'billed_amount'], 0.1),
+        'outcomes': (['survived', 'readmission', 'diagnosis_date', 'end_treatment_date', 'treatment_type', 'cancer_stage'], 0.06),
+    }
+    score = 0.0
+    for fields, weight in weighted_groups.values():
+        present = [field for field in fields if field in canonical_map]
+        if not present:
+            continue
+        native_present = [field for field in present if field not in synthetic_fields]
+        native_ratio = len(native_present) / len(present)
+        coverage_ratio = min(len(present) / max(min(len(fields), 2), 1), 1.0)
+        score += weight * ((coverage_ratio * 0.75) + (native_ratio * 0.25))
     score = max(score, 0.0)
     if score >= 0.75:
         dataset_type = 'Claims or encounter-level healthcare dataset'
+    elif score >= 0.58:
+        dataset_type = 'Encounter-oriented healthcare dataset'
     elif score >= 0.45:
         dataset_type = 'Partially healthcare-related dataset'
     else:
@@ -208,7 +357,7 @@ def assess_healthcare_dataset(canonical_map: dict[str, str], synthetic_fields: s
 def utilization_analysis(data: pd.DataFrame, canonical_map: dict[str, str]) -> dict[str, object]:
     entity_col = _resolve_column(data, canonical_map, ['entity_id', 'patient_id', 'member_id'], ['entity_id', 'patient_id', 'member_id'])
     date_col = _resolve_column(data, canonical_map, ['event_date', 'service_date', 'admission_date'], ['event_date', 'service_date', 'admission_date'])
-    category_col = _resolve_column(data, canonical_map, ['diagnosis_code', 'procedure_code', 'department', 'category'], ['diagnosis_code', 'procedure_code', 'department', 'category'])
+    category_col = _resolve_column(data, canonical_map, ['diagnosis_code', 'procedure_code', 'department', 'encounter_type', 'encounter_type_code', 'encounter_status', 'encounter_status_code', 'category'], ['diagnosis_code', 'procedure_code', 'department', 'encounter_type', 'encounter_type_code', 'encounter_status', 'encounter_status_code', 'category'])
     if not entity_col or not date_col:
         return {'available': False, 'reason': 'Needs an entity field and an event-style date field.'}
 
@@ -238,7 +387,7 @@ def utilization_analysis(data: pd.DataFrame, canonical_map: dict[str, str]) -> d
 
 def cost_analysis(data: pd.DataFrame, canonical_map: dict[str, str]) -> dict[str, object]:
     cost_col = _resolve_column(data, canonical_map, ['cost_amount', 'paid_amount', 'allowed_amount', 'billed_amount'], ['cost_amount', 'paid_amount', 'allowed_amount', 'billed_amount', 'cost'])
-    segment_col = _resolve_column(data, canonical_map, ['provider_name', 'facility', 'department', 'payer', 'diagnosis_code', 'procedure_code'], ['provider_name', 'facility', 'department', 'payer', 'diagnosis_code', 'procedure_code'])
+    segment_col = _resolve_column(data, canonical_map, ['provider_name', 'facility', 'department', 'encounter_type', 'encounter_status', 'payer', 'diagnosis_code', 'procedure_code'], ['provider_name', 'facility', 'department', 'encounter_type', 'encounter_status', 'payer', 'diagnosis_code', 'procedure_code'])
     date_col = _resolve_column(data, canonical_map, ['event_date', 'service_date', 'admission_date'], ['event_date', 'service_date', 'admission_date'])
     if not cost_col:
         return {'available': False, 'reason': 'Needs a cost, payment, or billed amount field.'}
@@ -360,7 +509,7 @@ def claims_cost_analyzer(data: pd.DataFrame, canonical_map: dict[str, str]) -> d
 
 
 def provider_analysis(data: pd.DataFrame, canonical_map: dict[str, str]) -> dict[str, object]:
-    provider_col = _resolve_column(data, canonical_map, ['provider_name', 'facility', 'provider_id'], ['provider_name', 'facility', 'provider_id'])
+    provider_col = _resolve_column(data, canonical_map, ['provider_name', 'facility', 'room_id', 'provider_id'], ['provider_name', 'facility', 'room_id', 'provider_id'])
     cost_col = _resolve_column(data, canonical_map, ['cost_amount', 'paid_amount', 'allowed_amount', 'billed_amount'], ['cost_amount', 'paid_amount', 'allowed_amount', 'billed_amount', 'cost'])
     if not provider_col:
         return {'available': False, 'reason': 'Needs a provider or facility field.'}
@@ -376,7 +525,7 @@ def provider_analysis(data: pd.DataFrame, canonical_map: dict[str, str]) -> dict
 
 
 def diagnosis_procedure_analysis(data: pd.DataFrame, canonical_map: dict[str, str]) -> dict[str, object]:
-    clinical_col = _resolve_column(data, canonical_map, ['diagnosis_code', 'procedure_code', 'department'], ['diagnosis_code', 'procedure_code', 'department'])
+    clinical_col = _resolve_column(data, canonical_map, ['diagnosis_code', 'procedure_code', 'department', 'encounter_type', 'encounter_status'], ['diagnosis_code', 'procedure_code', 'department', 'encounter_type', 'encounter_status'])
     cost_col = _resolve_column(data, canonical_map, ['cost_amount', 'paid_amount', 'allowed_amount', 'billed_amount'], ['cost_amount', 'paid_amount', 'allowed_amount', 'billed_amount', 'cost'])
     if not clinical_col:
         return {'available': False, 'reason': 'Needs a diagnosis, procedure, or department field.'}
@@ -463,13 +612,82 @@ def readmission_risk_analytics(data: pd.DataFrame, canonical_map: dict[str, str]
     if admit_col:
         analyzable.append('Readmission trend over time')
 
+    support_level, support_score = _readmission_support_level(
+        present_fields,
+        analyzable,
+        has_row_level_support=bool(entity_col and admit_col or readmission_values is not None),
+    )
+    unlock_fields = _readmission_unlock_fields(missing_for_full)
+    guidance_notes = _build_readmission_guidance_notes(support_level, analyzable, missing_for_full, unlock_fields)
+    readiness_summary = {
+        'workflow_title': 'Hospital Readmission Risk Analytics',
+        'support_level': support_level,
+        'support_score': support_score,
+        'present_fields': {key: value for key, value in present_fields.items() if value},
+        'missing_fields': missing_for_full,
+        'available_analysis': analyzable,
+        'additional_fields_to_unlock_full_analysis': unlock_fields,
+        'what_still_works': ', '.join(analyzable) if analyzable else 'No readmission-specific analytics are currently in scope.',
+        'blocker_summary': (
+            'The current dataset needs a patient identifier plus encounter timing or a native readmission field before the full readmission workflow can run.'
+            if support_level == 'Unavailable'
+            else 'The current dataset can already support a directional readmission workflow and can be strengthened with a few additional mapped fields.'
+        ),
+        'guidance_notes': guidance_notes,
+        'badge_text': (
+            'Full readmission workflow available'
+            if support_level == 'Full'
+            else 'Partial readmission workflow available'
+            if support_level == 'Partial'
+            else 'Limited readmission workflow available'
+            if support_level == 'Limited'
+            else 'Readmission workflow unavailable'
+        ),
+        'support_table': pd.DataFrame(
+            [
+                {
+                    'readmission_capability': 'Current support level',
+                    'status': support_level,
+                    'detail': (
+                        'The current dataset supports the full readmission workflow.'
+                        if support_level == 'Full'
+                        else 'The current dataset supports part of the readmission workflow and can still surface useful operational patterns.'
+                        if support_level in {'Partial', 'Limited'}
+                        else 'The current dataset needs stronger encounter-level structure or a readmission indicator before readmission analytics can run.'
+                    ),
+                },
+                {
+                    'readmission_capability': 'What can be analyzed now',
+                    'status': f'{len(analyzable)} workflow areas',
+                    'detail': ', '.join(analyzable) if analyzable else 'No readmission-specific analytics are currently in scope.',
+                },
+                {
+                    'readmission_capability': 'Fields to add next',
+                    'status': f'{len(unlock_fields)} recommended fields',
+                    'detail': ', '.join(unlock_fields) if unlock_fields else 'No additional fields are required for the core readmission workflow.',
+                },
+            ]
+        ),
+    }
+
     if readmission_values is None and not (entity_col and admit_col):
+        solution_summary_cards = _build_readmission_solution_summary_cards(
+            support_level,
+            analyzable,
+            unlock_fields,
+        )
         return {
             'available': False,
             'reason': 'Needs either a readmission flag or an encounter-style patient/date structure to run readmission analytics.',
             'missing_fields': ['readmission flag or patient/date structure'],
             'available_analysis': analyzable,
-            'additional_fields_to_unlock_full_analysis': missing_for_full,
+            'additional_fields_to_unlock_full_analysis': unlock_fields,
+            'readiness': readiness_summary,
+            'solution_summary_cards': solution_summary_cards,
+            'solution_story': 'This readmission solution can still surface directional operational patterns, then expand into a fuller pilot workflow once patient and encounter timing fields are mapped.',
+            'next_best_action': (
+                'Map a patient identifier and an admission, discharge, or event-style date to unlock encounter-level readmission review.'
+            ),
         }
 
     frame_cols = [col for col in [entity_col, admit_col, discharge_col, age_col, diagnosis_col, department_col, los_col, cost_col, smoking_col, comorbidity_col, treatment_col] if col]
@@ -499,12 +717,21 @@ def readmission_risk_analytics(data: pd.DataFrame, canonical_map: dict[str, str]
         source_label = 'derived'
 
     if frame.empty or not frame['readmission_flag'].notna().any():
+        solution_summary_cards = _build_readmission_solution_summary_cards(
+            support_level,
+            analyzable,
+            unlock_fields,
+        )
         return {
             'available': False,
             'reason': 'No usable readmission records remain after parsing the current fields.',
             'missing_fields': missing_for_full,
             'available_analysis': analyzable,
-            'additional_fields_to_unlock_full_analysis': missing_for_full,
+            'additional_fields_to_unlock_full_analysis': unlock_fields,
+            'readiness': readiness_summary,
+            'solution_summary_cards': solution_summary_cards,
+            'solution_story': 'The current dataset maps into the readmission solution, but the remaining rows do not preserve enough usable encounter detail for a stable review.',
+            'next_best_action': 'Validate the readmission flag and encounter date mappings before generating readmission reporting.',
         }
 
     if los_col:
@@ -525,10 +752,10 @@ def readmission_risk_analytics(data: pd.DataFrame, canonical_map: dict[str, str]
         'records_in_scope': int(len(frame)),
     }
 
-    by_department = _readmission_group_rate(frame, department_col) if department_col else pd.DataFrame()
-    by_diagnosis = _readmission_group_rate(frame, diagnosis_col) if diagnosis_col else pd.DataFrame()
-    by_age_band = _readmission_group_rate(frame, 'age_band') if 'age_band' in frame.columns else pd.DataFrame()
-    by_los_band = _readmission_group_rate(frame, 'los_band') if 'los_band' in frame.columns else pd.DataFrame()
+    by_department = add_rate_stability_columns(_readmission_group_rate(frame, department_col), rate_col='readmission_rate') if department_col else pd.DataFrame()
+    by_diagnosis = add_rate_stability_columns(_readmission_group_rate(frame, diagnosis_col), rate_col='readmission_rate') if diagnosis_col else pd.DataFrame()
+    by_age_band = add_rate_stability_columns(_readmission_group_rate(frame, 'age_band'), rate_col='readmission_rate') if 'age_band' in frame.columns else pd.DataFrame()
+    by_los_band = add_rate_stability_columns(_readmission_group_rate(frame, 'los_band'), rate_col='readmission_rate') if 'los_band' in frame.columns else pd.DataFrame()
 
     trend = pd.DataFrame()
     if admit_col:
@@ -538,6 +765,7 @@ def readmission_risk_analytics(data: pd.DataFrame, canonical_map: dict[str, str]
                 record_count=('readmission_flag', 'size'),
                 readmission_rate=('readmission_flag', 'mean'),
             ).reset_index()
+            trend = add_rate_stability_columns(trend, rate_col='readmission_rate')
 
     segment_rows: list[dict[str, object]] = []
     for label, group_col in [('Department', department_col), ('Diagnosis', diagnosis_col), ('Age Band', 'age_band' if 'age_band' in frame.columns else None), ('LOS Band', 'los_band' if 'los_band' in frame.columns else None)]:
@@ -560,6 +788,8 @@ def readmission_risk_analytics(data: pd.DataFrame, canonical_map: dict[str, str]
                 'suggested_next_action': f"Review {label.lower()} follow-up planning for {row[group_col]}.",
             })
     high_risk_segments = pd.DataFrame(segment_rows).sort_values(['gap_vs_overall', 'record_count'], ascending=[False, False]).head(12).reset_index(drop=True) if segment_rows else pd.DataFrame()
+    if not high_risk_segments.empty:
+        high_risk_segments = add_rate_stability_columns(high_risk_segments, rate_col='readmission_rate')
 
     if smoking_col and smoking_col in frame.columns:
         smoking_text = frame[smoking_col].astype(str).str.strip().str.lower()
@@ -636,15 +866,78 @@ def readmission_risk_analytics(data: pd.DataFrame, canonical_map: dict[str, str]
         'Readmission drivers are limited because the current dataset does not contain enough segmentation detail.'
     )
 
+    support_level, support_score = _readmission_support_level(
+        present_fields,
+        analyzable,
+        has_row_level_support=True,
+    )
+    unlock_fields = _readmission_unlock_fields(missing_for_full)
+    guidance_notes = _build_readmission_guidance_notes(support_level, analyzable, missing_for_full, unlock_fields)
+    readiness_summary = {
+        'workflow_title': 'Hospital Readmission Risk Analytics',
+        'support_level': support_level,
+        'support_score': support_score,
+        'present_fields': {key: value for key, value in present_fields.items() if value},
+        'missing_fields': missing_for_full,
+        'available_analysis': analyzable,
+        'additional_fields_to_unlock_full_analysis': unlock_fields,
+        'what_still_works': ', '.join(analyzable) if analyzable else 'No readmission-specific analytics are currently in scope.',
+        'blocker_summary': (
+            'A few mapped fields are still missing, but the current dataset can already support directional readmission review.'
+            if missing_for_full
+            else 'The dataset is ready for a full readmission workflow including segmentation, drivers, interventions, and reporting.'
+        ),
+        'guidance_notes': guidance_notes,
+        'badge_text': 'Full readmission workflow available' if not missing_for_full else 'Partial readmission workflow available',
+        'support_table': pd.DataFrame(
+            [
+                {
+                    'readmission_capability': 'Current support level',
+                    'status': support_level,
+                    'detail': (
+                        'The current dataset supports the full readmission workflow.'
+                        if support_level == 'Full'
+                        else 'The current dataset supports part of the readmission workflow and can still surface useful operational patterns.'
+                    ),
+                },
+                {
+                    'readmission_capability': 'What can be analyzed now',
+                    'status': f'{len(analyzable)} workflow areas',
+                    'detail': ', '.join(analyzable),
+                },
+                {
+                    'readmission_capability': 'Fields to add next',
+                    'status': f'{len(unlock_fields)} recommended fields',
+                    'detail': ', '.join(unlock_fields) if unlock_fields else 'No additional fields are required for the core readmission workflow.',
+                },
+            ]
+        ),
+    }
+    intervention_recommendations = _build_readmission_intervention_recommendations(high_risk_segments, readmission_driver_table)
+    top_patient_count = int((high_risk_patients['readmission_risk_segment'] == 'High Risk').sum()) if not high_risk_patients.empty else 0
+    solution_summary_cards = _build_readmission_solution_summary_cards(
+        support_level,
+        analyzable,
+        unlock_fields,
+        high_risk_segments=high_risk_segments,
+        high_risk_patients=high_risk_patients,
+    )
+    solution_story = 'This readmission workflow combines readiness, segment discovery, drivers, cohort review, intervention planning, and reporting in one pilot-ready operational review.'
+    next_best_action = (
+        str(intervention_recommendations.iloc[0]['intervention'])
+        if not intervention_recommendations.empty
+        else 'Review the highest-gap readmission segment and validate the supporting encounter fields.'
+    )
+    top_high_risk_summary = (
+        f"{high_risk_segments.iloc[0]['segment_type']} = {high_risk_segments.iloc[0]['segment_value']} is currently the strongest readmission signal at "
+        f"{float(high_risk_segments.iloc[0]['readmission_rate']):.1%} across {int(high_risk_segments.iloc[0]['record_count'])} records."
+        if not high_risk_segments.empty
+        else 'No standout readmission segment is separating clearly enough to rank as the top operational priority yet.'
+    )
+
     return {
         'available': True,
-        'readiness': {
-            'present_fields': {key: value for key, value in present_fields.items() if value},
-            'missing_fields': missing_for_full,
-            'available_analysis': analyzable,
-            'additional_fields_to_unlock_full_analysis': [field for field in ['readmission_flag', 'age', 'diagnosis', 'department', 'length_of_stay', 'cost'] if field in missing_for_full],
-            'badge_text': 'Full readmission workflow available' if not missing_for_full else 'Partial readmission workflow available',
-        },
+        'readiness': readiness_summary,
         'overview': overview,
         'by_department': by_department,
         'by_diagnosis': by_diagnosis,
@@ -664,6 +957,11 @@ def readmission_risk_analytics(data: pd.DataFrame, canonical_map: dict[str, str]
         'los_column': los_col,
         'note': derived_flag_note,
         'source': source_label,
+        'solution_story': solution_story,
+        'solution_summary_cards': solution_summary_cards,
+        'intervention_recommendations': intervention_recommendations,
+        'next_best_action': next_best_action,
+        'top_high_risk_summary': top_high_risk_summary,
     }
 
 
@@ -833,9 +1131,212 @@ def _append_anomaly_summary(summary_rows: list[dict[str, object]], field_label: 
     })
 
 
+def _build_age_band(series: pd.Series) -> pd.Series:
+    age = _safe_numeric(series)
+    return pd.cut(age, bins=[-1, 17, 34, 49, 64, 200], labels=['0-17', '18-34', '35-49', '50-64', '65+'])
+
+
+def _expected_clinical_categorical_values(field_name: str) -> set[str]:
+    expected = {
+        'smoking_status': {'smoker', 'current smoker', 'former smoker', 'non-smoker', 'never', 'current', 'former', 'yes', 'no'},
+        'gender': {'m', 'f', 'male', 'female', 'other', 'unknown'},
+        'cancer_stage': {'0', 'i', 'ii', 'iii', 'iv', 'stage i', 'stage ii', 'stage iii', 'stage iv'},
+        'treatment_type': {'chemo', 'chemotherapy', 'radiation', 'immunotherapy', 'surgery', 'therapy', 'observation'},
+    }
+    return expected.get(field_name, set())
+
+
+def _clinical_reference_range(field_name: str) -> tuple[float, float] | None:
+    ranges = {
+        'age': (0.0, 110.0),
+        'bmi': (12.0, 60.0),
+        'cholesterol_level': (80.0, 400.0),
+        'blood_glucose_level': (40.0, 600.0),
+        'potassium_level': (2.0, 7.5),
+        'sodium_level': (110.0, 180.0),
+        'length_of_stay': (0.0, 90.0),
+    }
+    return ranges.get(field_name)
+
+
+def _classify_numeric_anomaly(field_name: str, value: float, anomaly_type: str) -> tuple[str, str, str, str, bool, float | None]:
+    reference = _clinical_reference_range(field_name)
+    if pd.isna(value):
+        return ('Type C - Data Quality Issues', 'Missing or corrupted measurement', 'impute', 'imputed', False, None)
+    if value in {0.0, 999.0, 9999.0} or value < 0:
+        return ('Type A - Data Entry Errors', 'Impossible or placeholder numeric value', 'correct', 'corrected', True, None)
+    if reference:
+        lower, upper = reference
+        if value > upper * 10 and (value / 10.0) >= lower and (value / 10.0) <= upper:
+            return ('Type A - Data Entry Errors', 'Likely unit scaling issue', 'correct', 'corrected', True, round(value / 10.0, 2))
+        if field_name == 'age':
+            reversed_digits = float(str(int(abs(value)))[::-1]) if float(value).is_integer() and value >= 10 else math.nan
+            if not math.isnan(reversed_digits) and lower <= reversed_digits <= upper:
+                return ('Type A - Data Entry Errors', 'Likely digit transposition', 'correct', 'corrected', True, reversed_digits)
+        if value < lower or value > upper:
+            return ('Type A - Data Entry Errors', 'Measurement exceeds clinical reference limits', 'review', 'manual_review', False, None)
+    if anomaly_type == 'Temporal Change':
+        return ('Type D - System/Unknown Issues', 'Abrupt visit-to-visit change needs investigation', 'quarantine', 'quarantined', False, None)
+    return ('Type B - Legitimate Clinical Outliers', 'Extreme but clinically plausible measurement', 'accept', 'accepted_valid_outlier', False, None)
+
+
+def _classify_categorical_anomaly(field_name: str, value: object, anomaly_type: str) -> tuple[str, str, str, str]:
+    text = str(value).strip().lower()
+    expected = _expected_clinical_categorical_values(field_name)
+    if anomaly_type == 'Category Frequency Spike':
+        return ('Type C - Data Quality Issues', 'Dominant category may reflect coding collapse', 'review', 'manual_review')
+    if expected and text not in expected:
+        return ('Type C - Data Quality Issues', 'Value not recognized in expected clinical ontology', 'impute', 'imputed')
+    return ('Type D - System/Unknown Issues', 'Unexplained categorical anomaly pattern', 'quarantine', 'quarantined')
+
+
+def _similar_record_examples(data: pd.DataFrame, row_index: int, source_column: str, limit: int = 5) -> str:
+    if source_column not in data.columns or row_index not in data.index:
+        return ''
+    series = data[source_column]
+    value = data.loc[row_index, source_column]
+    numeric = _safe_numeric(series)
+    numeric_value = _safe_numeric(pd.Series([value])).iloc[0]
+    if pd.notna(numeric_value) and numeric.notna().any():
+        distance = (numeric - float(numeric_value)).abs()
+        candidates = data.loc[distance.nsmallest(limit + 1).index]
+        candidates = candidates[candidates.index != row_index].head(limit)
+        return '; '.join(f'row {idx}: {candidates.loc[idx, source_column]}' for idx in candidates.index)
+    text = str(value).strip().lower()
+    candidates = data[series.astype(str).str.strip().str.lower() == text].head(limit + 1)
+    candidates = candidates[candidates.index != row_index].head(limit)
+    return '; '.join(f'row {idx}: {candidates.loc[idx, source_column]}' for idx in candidates.index)
+
+
+def _build_anomaly_investigation_packet(data: pd.DataFrame, summary_rows: list[dict[str, object]], detail_rows: list[pd.DataFrame]) -> dict[str, object]:
+    detail_table = pd.concat(detail_rows, ignore_index=True) if detail_rows else pd.DataFrame()
+    if detail_table.empty:
+        return {
+            'detail_table': pd.DataFrame(),
+            'classification_table': pd.DataFrame(),
+            'remediation_action_log': pd.DataFrame(),
+            'review_export': pd.DataFrame(),
+            'validation_report': pd.DataFrame(),
+            'updated_records_preview': pd.DataFrame(),
+        }
+
+    detail_table = detail_table.sort_values('anomaly_score', ascending=False).head(MAX_ANOMALY_REVIEW_ROWS).reset_index(drop=True)
+
+    patient_col = next((column for column in ['patient_id', 'member_id', 'entity_id'] if column in data.columns), None)
+    visit_col = next((column for column in ['admission_date', 'service_date', 'event_date', 'diagnosis_date', 'discharge_date'] if column in data.columns), None)
+    enriched_rows: list[dict[str, object]] = []
+    updated_preview_rows: list[dict[str, object]] = []
+
+    for record in detail_table.to_dict('records'):
+        row_index = int(record.get('row_index', -1))
+        field_name = str(record.get('field', 'unknown'))
+        source_column = str(record.get('source_column', field_name))
+        value = record.get('value')
+        anomaly_type = str(record.get('anomaly_type', 'Unknown'))
+        patient_id = data.loc[row_index, patient_col] if patient_col and row_index in data.index else ''
+        visit_date = data.loc[row_index, visit_col] if visit_col and row_index in data.index else ''
+        if anomaly_type in {'Numeric Outlier', 'Temporal Change', 'Logical Rule Violation'}:
+            classification, reason, suggested_action, resolution, auto_correctable, corrected_value = _classify_numeric_anomaly(field_name, _safe_numeric(pd.Series([value])).iloc[0], anomaly_type)
+        else:
+            classification, reason, suggested_action, resolution = _classify_categorical_anomaly(field_name, value, anomaly_type)
+            auto_correctable = False
+            corrected_value = None
+
+        if auto_correctable and corrected_value is not None:
+            updated_preview_rows.append(
+                {
+                    'row_index': row_index,
+                    'field_name': field_name,
+                    'original_value': value,
+                    'updated_value': corrected_value,
+                    'anomaly_resolution': resolution,
+                }
+            )
+
+        enriched_rows.append(
+            {
+                **record,
+                'patient_id': patient_id,
+                'visit_date': visit_date,
+                'classification': classification,
+                'reason_flagged': reason,
+                'suggested_action': suggested_action,
+                'anomaly_resolution': resolution,
+                'auto_correctable': auto_correctable,
+                'corrected_value': corrected_value,
+                'valid_outlier_flag': int(classification == 'Type B - Legitimate Clinical Outliers'),
+                'clinical_comment': 'Documented as clinically plausible outlier.' if classification == 'Type B - Legitimate Clinical Outliers' else '',
+                'similar_records': '',
+            }
+        )
+
+    enriched = pd.DataFrame(enriched_rows)
+    if not enriched.empty:
+        review_candidates = enriched.head(MAX_SIMILAR_RECORD_ROWS).copy()
+        for idx, row in review_candidates.iterrows():
+            enriched.at[idx, 'similar_records'] = _similar_record_examples(data, int(row['row_index']), str(row['source_column']))
+    classification_table = enriched.groupby('classification', dropna=False).agg(anomaly_count=('field', 'size')).reset_index().sort_values('anomaly_count', ascending=False).reset_index(drop=True)
+    remediation_action_log = enriched.groupby(['suggested_action', 'anomaly_resolution'], dropna=False).agg(record_count=('field', 'size')).reset_index().sort_values('record_count', ascending=False).reset_index(drop=True)
+    review_export = enriched[
+        [
+            'patient_id',
+            'visit_date',
+            'field',
+            'source_column',
+            'value',
+            'reason_flagged',
+            'classification',
+            'suggested_action',
+            'similar_records',
+            'anomaly_resolution',
+            'clinical_comment',
+        ]
+    ].rename(columns={'field': 'field_name'}).head(250)
+
+    resolution_counts = enriched['anomaly_resolution'].value_counts(dropna=False)
+    original_count = int(len(enriched))
+    final_resolution_count = int(resolution_counts.sum())
+    auto_corrected = int(resolution_counts.get('corrected', 0))
+    accepted = int(resolution_counts.get('accepted_valid_outlier', 0))
+    imputed = int(resolution_counts.get('imputed', 0))
+    quarantined = int(resolution_counts.get('quarantined', 0))
+    manual_review = int(resolution_counts.get('manual_review', 0))
+    improvement = min(12.0, (auto_corrected + accepted + imputed) / max(original_count, 1) * 100.0)
+    validation_report = pd.DataFrame(
+        [
+            {'metric': 'Original anomaly count', 'value': original_count},
+            {'metric': 'Final resolution count', 'value': final_resolution_count},
+            {'metric': 'Corrected count', 'value': auto_corrected},
+            {'metric': 'Accepted count', 'value': accepted},
+            {'metric': 'Imputed count', 'value': imputed},
+            {'metric': 'Quarantined count', 'value': quarantined},
+            {'metric': 'Manual review count', 'value': manual_review},
+            {'metric': 'Estimated quality score improvement', 'value': round(improvement, 2)},
+            {'metric': 'Sign-off status', 'value': 'Ready for governance review' if final_resolution_count == original_count else 'Incomplete'},
+        ]
+    )
+    updated_records_preview = pd.DataFrame(updated_preview_rows).head(50)
+    return {
+        'detail_table': enriched.sort_values('anomaly_score', ascending=False).head(MAX_ANOMALY_DETAIL_ROWS),
+        'classification_table': classification_table,
+        'remediation_action_log': remediation_action_log,
+        'review_export': review_export,
+        'validation_report': validation_report,
+        'updated_records_preview': updated_records_preview,
+    }
+
+
 def anomaly_detection(data: pd.DataFrame, canonical_map: dict[str, str]) -> dict[str, object]:
     anomaly_fields = []
-    for canonical, raw_names in [('age', ['age']), ('bmi', ['bmi']), ('cholesterol_level', ['cholesterol_level', 'cholesterol'])]:
+    for canonical, raw_names in [
+        ('age', ['age']),
+        ('bmi', ['bmi', 'bmi_remediated_value']),
+        ('cholesterol_level', ['cholesterol_level', 'cholesterol']),
+        ('blood_glucose_level', ['blood_glucose_level', 'glucose', 'glucose_level']),
+        ('potassium_level', ['potassium_level', 'potassium']),
+        ('sodium_level', ['sodium_level', 'sodium']),
+        ('length_of_stay', ['length_of_stay', 'los']),
+    ]:
         column = _resolve_column(data, canonical_map, [canonical], raw_names)
         if column:
             anomaly_fields.append((canonical, column))
@@ -853,6 +1354,9 @@ def anomaly_detection(data: pd.DataFrame, canonical_map: dict[str, str]) -> dict
 
     summary_rows: list[dict[str, object]] = []
     detail_rows: list[pd.DataFrame] = []
+    age_col = _resolve_column(data, canonical_map, ['age'], ['age'])
+    gender_col = _resolve_column(data, canonical_map, ['gender'], ['gender', 'sex'])
+    patient_col = _resolve_column(data, canonical_map, ['patient_id', 'member_id', 'entity_id'], ['patient_id', 'member_id', 'entity_id'])
 
     for canonical, column in anomaly_fields:
         numeric = _safe_numeric(data[column])
@@ -860,6 +1364,19 @@ def anomaly_detection(data: pd.DataFrame, canonical_map: dict[str, str]) -> dict
         if len(valid) < 8 or float(valid.std()) == 0.0:
             continue
         z_scores = ((valid - valid.mean()) / valid.std()).abs()
+        if age_col and gender_col:
+            grouped = pd.DataFrame(
+                {
+                    'metric': numeric,
+                    'age_band': _build_age_band(data[age_col]),
+                    'gender': data[gender_col].fillna('Unknown').astype(str),
+                }
+            )
+            grouped_stats = grouped.groupby(['age_band', 'gender'], observed=False)['metric'].agg(['mean', 'std'])
+            grouped = grouped.join(grouped_stats, on=['age_band', 'gender'])
+            grouped_z = ((grouped['metric'] - grouped['mean']).abs() / grouped['std'].replace(0, pd.NA)).reindex(valid.index)
+            grouped_z = pd.to_numeric(grouped_z, errors='coerce')
+            z_scores = grouped_z.where(grouped_z.notna(), z_scores)
         q1 = valid.quantile(0.25)
         q3 = valid.quantile(0.75)
         iqr = q3 - q1
@@ -879,6 +1396,38 @@ def anomaly_detection(data: pd.DataFrame, canonical_map: dict[str, str]) -> dict
             'recommended_investigation': 'Review the flagged numeric values for data entry, unit, or measurement issues.'
         })
         detail_rows.append(detail)
+
+        if patient_col and date_col:
+            temporal = pd.DataFrame(
+                {
+                    'patient_id': data[patient_col],
+                    'event_date': pd.to_datetime(data[date_col], errors='coerce'),
+                    'value': numeric,
+                },
+                index=data.index,
+            ).dropna()
+            if len(temporal) >= 8:
+                temporal = temporal.sort_values(['patient_id', 'event_date'])
+                temporal['prior_value'] = temporal.groupby('patient_id')['value'].shift(1)
+                temporal['delta'] = (temporal['value'] - temporal['prior_value']).abs()
+                delta_std = float(temporal['delta'].dropna().std()) if temporal['delta'].dropna().shape[0] >= 2 else 0.0
+                if delta_std > 0:
+                    temporal_flags = temporal[temporal['delta'] > (2.0 * delta_std)]
+                    if not temporal_flags.empty:
+                        _append_anomaly_summary(summary_rows, canonical, column, 'Temporal Change', len(temporal_flags), len(temporal), float((temporal_flags['delta'] / delta_std).max()), 'Review abrupt visit-to-visit changes to determine whether they reflect a real clinical event, entry error, or unit shift.')
+                        detail_rows.append(
+                            pd.DataFrame(
+                                {
+                                    'field': canonical,
+                                    'source_column': column,
+                                    'anomaly_type': 'Temporal Change',
+                                    'row_index': temporal_flags.index.astype(int),
+                                    'value': temporal_flags['value'].values,
+                                    'anomaly_score': (temporal_flags['delta'] / delta_std).values,
+                                    'recommended_investigation': 'Compare with the prior visit and confirm whether the change is clinically plausible.',
+                                }
+                            )
+                        )
 
     for canonical, column in categorical_candidates:
         series = data[column].dropna().astype(str).str.strip()
@@ -918,6 +1467,25 @@ def anomaly_detection(data: pd.DataFrame, canonical_map: dict[str, str]) -> dict
                     'recommended_investigation': ['Review the dominant category for coding drift or one-value collapse.'],
                 })
                 detail_rows.append(spike_detail)
+
+        expected_values = _expected_clinical_categorical_values(canonical)
+        if expected_values:
+            unexpected = series[~series.str.lower().isin(expected_values)]
+            if not unexpected.empty:
+                _append_anomaly_summary(summary_rows, canonical, column, 'Ontology Mismatch', int(len(unexpected)), len(series), 1.0, 'Validate unexpected categorical values against the expected clinical ontology and mapping rules.')
+                detail_rows.append(
+                    pd.DataFrame(
+                        {
+                            'field': canonical,
+                            'source_column': column,
+                            'anomaly_type': 'Ontology Mismatch',
+                            'row_index': unexpected.index.astype(int),
+                            'value': unexpected.values,
+                            'anomaly_score': [1.0] * len(unexpected),
+                            'recommended_investigation': ['Validate this value against the expected clinical ontology.'] * len(unexpected),
+                        }
+                    )
+                )
 
     if date_col:
         parsed_dates = pd.to_datetime(data[date_col], errors='coerce')
@@ -965,17 +1533,42 @@ def anomaly_detection(data: pd.DataFrame, canonical_map: dict[str, str]) -> dict
                     })
                     detail_rows.append(shift_detail)
 
+    admission_col = _resolve_column(data, canonical_map, ['admission_date'], ['admission_date'])
+    discharge_col = _resolve_column(data, canonical_map, ['discharge_date'], ['discharge_date'])
+    if admission_col and discharge_col:
+        admission_dates = pd.to_datetime(data[admission_col], errors='coerce')
+        discharge_dates = pd.to_datetime(data[discharge_col], errors='coerce')
+        bad_order = admission_dates.notna() & discharge_dates.notna() & discharge_dates.lt(admission_dates)
+        if bad_order.any():
+            _append_anomaly_summary(summary_rows, 'encounter_dates', discharge_col, 'Logical Rule Violation', int(bad_order.sum()), len(data), 1.0, 'Correct records where discharge precedes admission before using encounter timing in analysis.')
+            detail_rows.append(
+                pd.DataFrame(
+                    {
+                        'field': 'encounter_dates',
+                        'source_column': discharge_col,
+                        'anomaly_type': 'Logical Rule Violation',
+                        'row_index': data.index[bad_order].astype(int),
+                        'value': discharge_dates[bad_order].astype(str).values,
+                        'anomaly_score': [1.0] * int(bad_order.sum()),
+                        'recommended_investigation': ['Discharge date is earlier than admission date.'] * int(bad_order.sum()),
+                    }
+                )
+            )
+
     if not summary_rows:
         return {'available': False, 'reason': 'No unusual numeric, categorical, or time-based patterns were flagged by the anomaly rules.'}
 
     summary_table = pd.DataFrame(summary_rows).sort_values(['anomaly_score', 'affected_rows'], ascending=[False, False]).reset_index(drop=True)
-    detail_table = pd.concat(detail_rows, ignore_index=True) if detail_rows else pd.DataFrame()
-    if not detail_table.empty:
-        detail_table = detail_table.sort_values('anomaly_score', ascending=False).head(150)
+    investigation = _build_anomaly_investigation_packet(data, summary_rows, detail_rows)
     return {
         'available': True,
         'summary_table': summary_table,
-        'detail_table': detail_table,
+        'detail_table': investigation['detail_table'],
+        'classification_table': investigation['classification_table'],
+        'remediation_action_log': investigation['remediation_action_log'],
+        'review_export': investigation['review_export'],
+        'validation_report': investigation['validation_report'],
+        'updated_records_preview': investigation['updated_records_preview'],
     }
 
 def ai_insight_summary(data: pd.DataFrame, canonical_map: dict[str, str], risk_summary: dict[str, object]) -> list[str]:
@@ -1034,6 +1627,7 @@ def build_cohort_summary(
     comorbidity_filters: list[str] | None = None,
 ) -> dict[str, object]:
     prepared = _prepare_clinical_frame(data, canonical_map)
+    baseline_frame = prepared['frame'].copy()
     frame = prepared['frame'].copy()
     age_col = prepared['age_col']
     gender_col = prepared['gender_col']
@@ -1072,13 +1666,36 @@ def build_cohort_summary(
     summary = {
         'cohort_size': int(len(frame)),
         'average_age': float(_safe_numeric(frame[age_col]).mean()) if age_col else None,
+        'average_age_stddev': float(_safe_numeric(frame[age_col]).std()) if age_col and _safe_numeric(frame[age_col]).notna().sum() > 1 else None,
         'average_risk_score': float(pd.to_numeric(frame['risk_score'], errors='coerce').mean()) if 'risk_score' in frame.columns else None,
+        'average_risk_score_stddev': float(pd.to_numeric(frame['risk_score'], errors='coerce').std()) if 'risk_score' in frame.columns and pd.to_numeric(frame['risk_score'], errors='coerce').notna().sum() > 1 else None,
         'high_risk_share': float((frame['risk_segment'].astype(str) == 'High Risk').mean()) if 'risk_segment' in frame.columns else None,
         'average_treatment_duration_days': float(pd.to_numeric(frame['treatment_duration_days'], errors='coerce').mean()) if 'treatment_duration_days' in frame.columns and frame['treatment_duration_days'].notna().any() else None,
+        'average_treatment_duration_days_stddev': float(pd.to_numeric(frame['treatment_duration_days'], errors='coerce').std()) if 'treatment_duration_days' in frame.columns and pd.to_numeric(frame['treatment_duration_days'], errors='coerce').notna().sum() > 1 else None,
     }
     if outcome_col:
         outcome = frame['survived_binary'] if 'survived_binary' in frame.columns else _binary_outcome(frame[outcome_col])
         summary['survival_rate'] = float(outcome.mean()) if outcome.notna().any() else None
+
+    baseline_summary = {
+        'population_size': int(len(baseline_frame)),
+        'average_age': float(_safe_numeric(baseline_frame[age_col]).mean()) if age_col else None,
+        'average_age_stddev': float(_safe_numeric(baseline_frame[age_col]).std()) if age_col and _safe_numeric(baseline_frame[age_col]).notna().sum() > 1 else None,
+        'average_risk_score': float(pd.to_numeric(baseline_frame['risk_score'], errors='coerce').mean()) if 'risk_score' in baseline_frame.columns else None,
+        'average_risk_score_stddev': float(pd.to_numeric(baseline_frame['risk_score'], errors='coerce').std()) if 'risk_score' in baseline_frame.columns and pd.to_numeric(baseline_frame['risk_score'], errors='coerce').notna().sum() > 1 else None,
+        'high_risk_share': float((baseline_frame['risk_segment'].astype(str) == 'High Risk').mean()) if 'risk_segment' in baseline_frame.columns else None,
+        'average_treatment_duration_days': float(pd.to_numeric(baseline_frame['treatment_duration_days'], errors='coerce').mean()) if 'treatment_duration_days' in baseline_frame.columns and baseline_frame['treatment_duration_days'].notna().any() else None,
+        'average_treatment_duration_days_stddev': float(pd.to_numeric(baseline_frame['treatment_duration_days'], errors='coerce').std()) if 'treatment_duration_days' in baseline_frame.columns and pd.to_numeric(baseline_frame['treatment_duration_days'], errors='coerce').notna().sum() > 1 else None,
+    }
+    if outcome_col:
+        baseline_outcome = baseline_frame['survived_binary'] if 'survived_binary' in baseline_frame.columns else _binary_outcome(baseline_frame[outcome_col])
+        baseline_summary['survival_rate'] = float(baseline_outcome.mean()) if baseline_outcome.notna().any() else None
+    readmission_values, _ = _readmission_flag(frame, canonical_map)
+    baseline_readmission_values, _ = _readmission_flag(baseline_frame, canonical_map)
+    if readmission_values is not None:
+        summary['readmission_rate'] = float(readmission_values.mean()) if readmission_values.notna().any() else None
+    if baseline_readmission_values is not None:
+        baseline_summary['readmission_rate'] = float(baseline_readmission_values.mean()) if baseline_readmission_values.notna().any() else None
 
     risk_distribution = pd.DataFrame()
     if 'risk_segment' in frame.columns:
@@ -1116,6 +1733,78 @@ def build_cohort_summary(
                     row['average_treatment_duration_days'] = float(durations.mean()) if not durations.empty else None
                 outcome_metric_rows.append(row)
     outcome_metrics_table = pd.DataFrame(outcome_metric_rows)
+    demographic_rows: list[dict[str, object]] = []
+    demographic_dimensions = [
+        ('Age Band', 'age_band'),
+        ('Gender', gender_col),
+        ('Smoking Status', smoking_col),
+        ('Cancer Stage', stage_col),
+        ('Treatment Type', treatment_col),
+    ]
+    if comorbidity_col:
+        frame = frame.copy()
+        baseline_frame = baseline_frame.copy()
+        frame['comorbidity_presence'] = _comorbidity_present(frame[comorbidity_col]).map({True: 'Present', False: 'Absent'})
+        baseline_frame['comorbidity_presence'] = _comorbidity_present(baseline_frame[comorbidity_col]).map({True: 'Present', False: 'Absent'})
+        demographic_dimensions.append(('Comorbidity Burden', 'comorbidity_presence'))
+    for dimension_label, column in demographic_dimensions:
+        if not column or column not in frame.columns:
+            continue
+        selected = _clean_group_field(frame[[column]].copy(), column)
+        if selected.empty:
+            continue
+        selected_counts = selected[column].value_counts().reset_index()
+        selected_counts.columns = ['segment', 'cohort_count']
+        selected_counts['cohort_share'] = selected_counts['cohort_count'] / max(len(selected), 1)
+        overall = _clean_group_field(baseline_frame[[column]].copy(), column)
+        overall_counts = overall[column].value_counts().reset_index()
+        overall_counts.columns = ['segment', 'overall_count']
+        overall_counts['overall_share'] = overall_counts['overall_count'] / max(len(overall), 1)
+        merged = selected_counts.merge(overall_counts, on='segment', how='left')
+        merged['dimension'] = dimension_label
+        merged['share_gap_vs_overall'] = merged['cohort_share'] - merged['overall_share'].fillna(0.0)
+        demographic_rows.extend(merged.to_dict(orient='records'))
+    demographic_breakdown_table = pd.DataFrame(demographic_rows)
+
+    comparison_rows = [
+        {
+            'metric': 'Population Share',
+            'selected_cohort': float(len(frame) / max(len(baseline_frame), 1)),
+            'overall_population': 1.0,
+            'gap_vs_overall': float(len(frame) / max(len(baseline_frame), 1)) - 1.0,
+        }
+    ]
+    for label, key in [
+        ('Average Age', 'average_age'),
+        ('Average Risk Score', 'average_risk_score'),
+        ('High-Risk Share', 'high_risk_share'),
+        ('Readmission Rate', 'readmission_rate'),
+        ('Survival Rate', 'survival_rate'),
+        ('Average Treatment Duration (Days)', 'average_treatment_duration_days'),
+    ]:
+        selected_value = summary.get(key)
+        overall_value = baseline_summary.get(key)
+        if selected_value is None or overall_value is None:
+            continue
+        comparison_rows.append(
+            {
+                'metric': label,
+                'selected_cohort': selected_value,
+                'overall_population': overall_value,
+                'gap_vs_overall': selected_value - overall_value,
+                'selected_stddev': summary.get(f'{key}_stddev'),
+                'overall_stddev': baseline_summary.get(f'{key}_stddev'),
+            }
+        )
+    comparison_table = pd.DataFrame(comparison_rows)
+    comparison_table = add_comparison_stability_columns(
+        comparison_table,
+        cohort_size=int(len(frame)),
+        population_size=int(len(baseline_frame)),
+    )
+    outcome_difference_table = comparison_table[
+        comparison_table['metric'].isin(['Readmission Rate', 'Survival Rate', 'High-Risk Share', 'Average Treatment Duration (Days)'])
+    ].reset_index(drop=True)
 
     cohort_trend_table = pd.DataFrame()
     trend_date_col = next((candidate for candidate in [prepared.get('diagnosis_date_col'), prepared.get('service_date_col'), prepared.get('admission_date_col')] if candidate and candidate in frame.columns), None)
@@ -1140,11 +1829,93 @@ def build_cohort_summary(
                 if not risk_working.empty:
                     risk_table = risk_working.assign(month=risk_working[trend_date_col].dt.to_period('M').dt.to_timestamp()).groupby('month')['risk_segment'].apply(lambda s: (s.astype(str) == 'High Risk').mean()).reset_index(name='high_risk_share')
                     cohort_trend_table = cohort_trend_table.merge(risk_table, on='month', how='left')
+            if 'survival_rate' in cohort_trend_table.columns:
+                cohort_trend_table = add_rate_stability_columns(
+                    cohort_trend_table,
+                    rate_col='survival_rate',
+                    count_col='record_count',
+                    lower_col='survival_confidence_lower',
+                    upper_col='survival_confidence_upper',
+                    width_col='survival_confidence_width',
+                    band_col='survival_stability_band',
+                )
+            if 'high_risk_share' in cohort_trend_table.columns:
+                cohort_trend_table = add_rate_stability_columns(
+                    cohort_trend_table,
+                    rate_col='high_risk_share',
+                    count_col='record_count',
+                    lower_col='high_risk_confidence_lower',
+                    upper_col='high_risk_confidence_upper',
+                    width_col='high_risk_confidence_width',
+                    band_col='high_risk_stability_band',
+                )
+
+    trend_summary: list[str] = []
+    if not cohort_trend_table.empty:
+        latest = cohort_trend_table.iloc[-1]
+        trend_summary.append(f"Cohort trend coverage spans {int(len(cohort_trend_table))} monthly periods.")
+        if 'survival_rate' in cohort_trend_table.columns and cohort_trend_table['survival_rate'].notna().any():
+            best = cohort_trend_table.loc[cohort_trend_table['survival_rate'].idxmax()]
+            trend_summary.append(f"Best observed cohort outcome period is {best['month'].strftime('%b %Y')} with survival at {float(best['survival_rate']):.1%}.")
+        if 'high_risk_share' in cohort_trend_table.columns and cohort_trend_table['high_risk_share'].notna().any():
+            trend_summary.append(f"Latest high-risk share is {float(latest['high_risk_share']):.1%}." if pd.notna(latest.get('high_risk_share')) else 'High-risk trend is being tracked over time.')
+        if 'record_count' in cohort_trend_table.columns and cohort_trend_table['record_count'].notna().any():
+            trend_summary.append(f"Latest cohort period includes {int(latest['record_count'])} records.")
+
+    summary_narrative_parts: list[str] = [f"This cohort includes {int(summary['cohort_size'])} records"]
+    if summary.get('survival_rate') is not None:
+        summary_narrative_parts.append(f"with an observed survival rate of {float(summary['survival_rate']):.1%}")
+    if summary.get('high_risk_share') is not None:
+        summary_narrative_parts.append(f"and a high-risk share of {float(summary['high_risk_share']):.1%}")
+    summary_narrative = ' '.join(summary_narrative_parts) + '.'
+    if not comparison_table.empty and 'gap_vs_overall' in comparison_table.columns:
+        largest_gap = comparison_table.iloc[1:] if len(comparison_table) > 1 else comparison_table
+        if not largest_gap.empty:
+            largest_gap = largest_gap.reindex(largest_gap['gap_vs_overall'].abs().sort_values(ascending=False).index).iloc[0]
+            summary_narrative += f" The strongest difference versus the full population is {largest_gap['metric'].lower()} ({float(largest_gap['gap_vs_overall']):+.2f})."
+
+    suggested_next_steps: list[str] = []
+    if summary.get('high_risk_share') is not None and baseline_summary.get('high_risk_share') is not None and summary['high_risk_share'] > baseline_summary['high_risk_share']:
+        suggested_next_steps.append('Use Risk Segmentation and Root Cause Explorer to understand why this cohort has a higher high-risk concentration than the overall population.')
+    if summary.get('survival_rate') is not None and baseline_summary.get('survival_rate') is not None and summary['survival_rate'] < baseline_summary['survival_rate']:
+        suggested_next_steps.append('Review treatment and pathway variation for this cohort because outcomes are running below the overall population.')
+    if summary.get('average_treatment_duration_days') is not None and baseline_summary.get('average_treatment_duration_days') is not None and summary['average_treatment_duration_days'] > baseline_summary['average_treatment_duration_days']:
+        suggested_next_steps.append('Compare this cohort against shorter-duration groups to identify avoidable delays in treatment or follow-up.')
+    if not trend_summary and trend_date_col is None:
+        suggested_next_steps.append('Add diagnosis, admission, service, or treatment-end dates to unlock cohort trend summaries over time.')
+    elif trend_summary:
+        suggested_next_steps.append('Use the cohort trend view below to track whether outcome and risk patterns are improving over time.')
 
     preview_columns = [column for column in [age_col, 'age_band', gender_col, diagnosis_col, treatment_col, smoking_col, stage_col, comorbidity_col, 'risk_score', 'risk_segment', 'treatment_duration_days'] if column and column in frame.columns]
     if outcome_col and outcome_col in frame.columns and outcome_col not in preview_columns:
         preview_columns.append(outcome_col)
     preview = frame[preview_columns].head(50) if preview_columns else frame.head(50)
+    active_filters = {
+        'age_range': age_range,
+        'age_bands': age_bands or [],
+        'genders': genders or [],
+        'diagnoses': diagnoses or [],
+        'treatments': treatments or [],
+        'smoking_statuses': smoking_statuses or [],
+        'cancer_stages': cancer_stages or [],
+        'risk_segments': risk_segments or [],
+        'comorbidity_filters': comorbidity_filters or [],
+    }
+    filter_definition_rows = [
+        {
+            'filter_name': key,
+            'selected_value': ', '.join(map(str, value)) if isinstance(value, list) else str(value),
+        }
+        for key, value in active_filters.items()
+        if value not in (None, [], ())
+    ]
+    cohort_definition = {
+        'active_filters': active_filters,
+        'cohort_size': int(len(frame)),
+        'summary': summary,
+        'baseline_summary': baseline_summary,
+        'filter_table': pd.DataFrame(filter_definition_rows, columns=['filter_name', 'selected_value']),
+    }
 
     return {
         'available': True,
@@ -1152,9 +1923,17 @@ def build_cohort_summary(
         'preview': preview,
         'cohort_frame': frame,
         'risk_distribution_table': risk_distribution,
+        'demographic_breakdown_table': demographic_breakdown_table,
         'outcome_metrics_table': outcome_metrics_table,
+        'comparison_table': comparison_table,
+        'outcome_difference_table': outcome_difference_table,
         'cohort_trend_table': cohort_trend_table,
         'cohort_trend_date_column': trend_date_col,
+        'baseline_summary': baseline_summary,
+        'summary_narrative': summary_narrative,
+        'trend_summary': trend_summary,
+        'suggested_next_steps': suggested_next_steps,
+        'cohort_definition': cohort_definition,
         'filter_columns': {
             'age': age_col,
             'gender': gender_col,
@@ -1220,8 +1999,8 @@ def survival_outcome_analysis(data: pd.DataFrame, canonical_map: dict[str, str])
     stage_col = _resolve_column(data, canonical_map, ['cancer_stage'], ['cancer_stage', 'stage'])
     treatment_col = _resolve_column(data, canonical_map, ['treatment_type'], ['treatment_type', 'treatment', 'therapy'])
 
-    if not outcome_col or not (stage_col or treatment_col or diagnosis_date_col):
-        return {'available': False, 'reason': 'Needs a survival-style outcome plus at least one stage, treatment, or diagnosis date field.'}
+    if not outcome_col:
+        return {'available': False, 'reason': 'Needs a survival-style outcome field before the platform can build outcome analysis.'}
 
     frame = data.copy()
     frame['survived_binary'] = _binary_outcome(frame[outcome_col])
@@ -1229,8 +2008,22 @@ def survival_outcome_analysis(data: pd.DataFrame, canonical_map: dict[str, str])
     if frame.empty:
         return {'available': False, 'reason': 'The outcome field does not contain usable survival-style values.'}
 
+    overall_survival_rate = float(frame['survived_binary'].mean()) if frame['survived_binary'].notna().any() else None
+    support_components = {
+        'outcome': bool(outcome_col),
+        'stage': bool(stage_col),
+        'treatment': bool(treatment_col),
+        'timeline': bool(diagnosis_date_col),
+        'duration': bool(diagnosis_date_col and treatment_end_col),
+    }
+    support_hits = sum(int(value) for value in support_components.values())
+    support_level = 'Full' if support_hits >= 4 else 'Partial' if support_hits >= 2 else 'Early'
+
     duration_summary = None
     duration_distribution = pd.DataFrame()
+    duration_by_stage = pd.DataFrame()
+    duration_by_treatment = pd.DataFrame()
+    duration_by_cohort = pd.DataFrame()
     treatment_duration_trend = pd.DataFrame()
     progression_timeline = pd.DataFrame()
     outcome_trend = pd.DataFrame()
@@ -1238,24 +2031,15 @@ def survival_outcome_analysis(data: pd.DataFrame, canonical_map: dict[str, str])
         frame[diagnosis_date_col] = pd.to_datetime(frame[diagnosis_date_col], errors='coerce')
     if treatment_end_col:
         frame[treatment_end_col] = pd.to_datetime(frame[treatment_end_col], errors='coerce')
-    if diagnosis_date_col and treatment_end_col:
-        frame['treatment_duration_days'] = (frame[treatment_end_col] - frame[diagnosis_date_col]).dt.days
-        valid_duration = frame['treatment_duration_days'].dropna()
-        valid_duration = valid_duration[valid_duration >= 0]
-        if not valid_duration.empty:
-            duration_summary = {
-                'average_duration_days': float(valid_duration.mean()),
-                'median_duration_days': float(valid_duration.median()),
-            }
-            duration_bins = pd.cut(valid_duration, bins=[-1, 30, 90, 180, 365, float('inf')], labels=['0-30 days', '31-90 days', '91-180 days', '181-365 days', '365+ days'])
-            duration_distribution = duration_bins.value_counts(sort=False).reset_index()
-            duration_distribution.columns = ['duration_band', 'record_count']
-            duration_distribution['percentage'] = duration_distribution['record_count'] / max(int(duration_distribution['record_count'].sum()), 1)
-        if diagnosis_date_col and 'treatment_duration_days' in frame.columns:
-            duration_trend_frame = frame[[diagnosis_date_col, 'treatment_duration_days']].dropna().copy()
-            duration_trend_frame = duration_trend_frame[duration_trend_frame['treatment_duration_days'] >= 0]
-            if not duration_trend_frame.empty:
-                treatment_duration_trend = duration_trend_frame.assign(month=duration_trend_frame[diagnosis_date_col].dt.to_period('M').dt.to_timestamp()).groupby('month').agg(average_treatment_duration_days=('treatment_duration_days', 'mean'), record_count=('treatment_duration_days', 'size')).reset_index()
+    duration_intel = _duration_intelligence(frame, diagnosis_date_col, treatment_end_col, stage_col, treatment_col)
+    if duration_intel.get('available'):
+        frame = duration_intel.get('working_frame', frame)
+        duration_summary = duration_intel.get('duration_summary')
+        duration_distribution = duration_intel.get('duration_distribution', pd.DataFrame())
+        duration_by_stage = duration_intel.get('duration_by_stage', pd.DataFrame())
+        duration_by_treatment = duration_intel.get('duration_by_treatment', pd.DataFrame())
+        duration_by_cohort = duration_intel.get('duration_by_cohort', pd.DataFrame())
+        treatment_duration_trend = duration_intel.get('duration_trend', pd.DataFrame())
 
     stage_table = pd.DataFrame()
     if stage_col:
@@ -1294,21 +2078,86 @@ def survival_outcome_analysis(data: pd.DataFrame, canonical_map: dict[str, str])
                     progression_timeline = progression_timeline.rename(columns={stage_col: 'stage_group'})
 
     if stage_table.empty and treatment_table.empty and trend.empty and duration_summary is None and progression_timeline.empty and duration_distribution.empty and outcome_trend.empty:
-        return {'available': False, 'reason': 'The required outcome fields exist, but the dataset does not have enough usable stage, treatment, or date detail for survival analysis.'}
+        summary_text = (
+            f"Observed outcome support is currently {support_level.lower()}. "
+            f"The dataset can still report an overall survival-style rate of {overall_survival_rate:.1%}."
+            if overall_survival_rate is not None
+            else 'Observed outcome support is currently limited, and stronger stage, treatment, or date detail is still needed.'
+        )
+        return {
+            'available': True,
+            'support_level': support_level,
+            'overall_survival_rate': overall_survival_rate,
+            'stage_column': stage_col,
+            'treatment_column': treatment_col,
+            'date_column': diagnosis_date_col,
+            'duration_summary': None,
+            'duration_distribution': pd.DataFrame(),
+            'duration_by_stage': pd.DataFrame(),
+            'duration_by_treatment': pd.DataFrame(),
+            'duration_by_cohort': pd.DataFrame(),
+            'treatment_duration_trend': pd.DataFrame(),
+            'stage_table': pd.DataFrame(),
+            'treatment_table': pd.DataFrame(),
+            'trend': pd.DataFrame(),
+            'outcome_trend': pd.DataFrame(),
+            'progression_timeline': pd.DataFrame(),
+            'summary': summary_text,
+            'interpretation': 'The current dataset supports an overall outcome view, but stage, treatment, or timeline detail is still too limited for stronger subgroup comparisons.',
+            'what_unlocks_next': 'Add or map stage, treatment, diagnosis/admission date, and end-treatment/discharge date fields to unlock richer outcome comparisons and trends.',
+            'note': 'This is a practical demo-oriented survival view based on observed outcomes. It is not a substitute for formal survival modeling or clinical validation.',
+        }
+
+    summary_lines: list[str] = []
+    if overall_survival_rate is not None:
+        summary_lines.append(f"Overall observed survival rate is {overall_survival_rate:.1%}.")
+    if not stage_table.empty:
+        weakest_stage = stage_table.sort_values(['survival_rate', 'record_count'], ascending=[True, False]).iloc[0]
+        summary_lines.append(
+            f"{weakest_stage[stage_col]} has the weakest observed stage-level survival at {float(weakest_stage['survival_rate']):.1%}."
+        )
+    if not treatment_table.empty:
+        strongest_treatment = treatment_table.sort_values(['survival_rate', 'record_count'], ascending=[False, False]).iloc[0]
+        summary_lines.append(
+            f"{strongest_treatment[treatment_col]} currently shows the strongest treatment-level outcome at {float(strongest_treatment['survival_rate']):.1%}."
+        )
+    if duration_summary is not None:
+        summary_lines.append(
+            f"Average observed treatment duration is {float(duration_summary['average_duration_days']):.1f} days."
+        )
+    if not trend.empty:
+        latest_trend = trend.iloc[-1]
+        summary_lines.append(
+            f"Latest outcome trend point is {float(latest_trend['survival_rate']):.1%} survival across {int(latest_trend['record_count'])} records."
+        )
+
+    interpretation = ' '.join(summary_lines[:4]) if summary_lines else 'Outcome analytics are available for the current dataset.'
 
     return {
         'available': True,
+        'support_level': support_level,
+        'overall_survival_rate': overall_survival_rate,
         'stage_column': stage_col,
         'treatment_column': treatment_col,
         'date_column': diagnosis_date_col,
         'duration_summary': duration_summary,
         'duration_distribution': duration_distribution,
+        'duration_by_stage': duration_by_stage,
+        'duration_by_treatment': duration_by_treatment,
+        'duration_by_cohort': duration_by_cohort,
         'treatment_duration_trend': treatment_duration_trend,
         'stage_table': stage_table,
         'treatment_table': treatment_table,
         'trend': trend,
         'outcome_trend': outcome_trend,
         'progression_timeline': progression_timeline,
+        'summary': interpretation,
+        'interpretation': interpretation,
+        'what_unlocks_next': (
+            'Add stage, treatment, and event-date detail together to strengthen subgroup comparisons, duration intelligence, and longitudinal outcome review.'
+            if support_level != 'Full'
+            else 'The dataset already supports stage, treatment, and time-based outcome review.'
+        ),
         'note': 'This is a practical demo-oriented survival view based on observed outcomes. It is not a substitute for formal survival modeling or clinical validation.',
     }
 
@@ -1370,6 +2219,369 @@ def benchmarking_analysis(data: pd.DataFrame, canonical_map: dict[str, str], ben
     }
 
 
+def length_of_stay_prediction(data: pd.DataFrame, canonical_map: dict[str, str]) -> dict[str, object]:
+    los_col = _resolve_column(data, canonical_map, ['length_of_stay'], ['length_of_stay', 'los', 'stay_length'])
+    if not los_col:
+        return {'available': False, 'reason': 'A length-of-stay field is needed for LOS prediction and operational review.'}
+
+    frame = data.copy()
+    frame['actual_length_of_stay'] = _safe_numeric(frame[los_col])
+    frame = frame.dropna(subset=['actual_length_of_stay'])
+    if frame.empty or len(frame) < 5:
+        return {'available': False, 'reason': 'Not enough usable LOS records remain after parsing.'}
+
+    risk_frame = _risk_detail_frame(frame, canonical_map)
+    if not risk_frame.empty:
+        merge_columns = ['risk_score', 'risk_segment']
+        frame = frame.join(risk_frame[merge_columns], how='left')
+
+    age_col = _resolve_column(frame, canonical_map, ['age'], ['age'])
+    bmi_col = _resolve_column(frame, canonical_map, ['bmi'], ['bmi'])
+    comorbidity_col = _resolve_column(frame, canonical_map, ['comorbidities'], ['comorbidities', 'comorbidity_score'])
+    department_col = _resolve_column(frame, canonical_map, ['department'], ['department', 'unit', 'service_line'])
+    diagnosis_col = _resolve_column(frame, canonical_map, ['diagnosis_code'], ['diagnosis_code', 'primary_diagnosis'])
+    readmission_values, _ = _readmission_flag(frame, canonical_map)
+    survived_col = _resolve_column(frame, canonical_map, ['survived'], ['survived', 'alive', 'outcome'])
+
+    baseline = float(frame['actual_length_of_stay'].mean())
+    predicted = pd.Series(baseline, index=frame.index, dtype='float64')
+    factor_rows: list[dict[str, object]] = []
+
+    if 'risk_score' in frame.columns and frame['risk_score'].notna().any():
+        risk_component = pd.to_numeric(frame['risk_score'], errors='coerce').fillna(0) * 0.8
+        predicted += risk_component
+        factor_rows.append(
+            {
+                'factor': 'Clinical risk score',
+                'weight': 0.8,
+                'signal': 'Higher-risk patients are directionally expected to require more inpatient days.',
+            }
+        )
+    if age_col:
+        age_component = (_safe_numeric(frame[age_col]).fillna(0) - 50).clip(lower=0) / 20
+        predicted += age_component
+        factor_rows.append(
+            {
+                'factor': 'Age',
+                'weight': 1.0,
+                'signal': 'Older cohorts are modeled with slightly longer stays when other factors are equal.',
+            }
+        )
+    if bmi_col:
+        bmi_component = (_safe_numeric(frame[bmi_col]).fillna(0) - 28).clip(lower=0) / 8
+        predicted += bmi_component
+        factor_rows.append(
+            {
+                'factor': 'BMI burden',
+                'weight': 1.0,
+                'signal': 'Higher BMI is used as a mild complexity signal in the LOS estimate.',
+            }
+        )
+    if comorbidity_col:
+        comorbidity_component = _safe_numeric(frame[comorbidity_col]).fillna(0) * 0.6
+        predicted += comorbidity_component
+        factor_rows.append(
+            {
+                'factor': 'Comorbidities',
+                'weight': 0.6,
+                'signal': 'More comorbidity burden directionally increases predicted LOS.',
+            }
+        )
+    if readmission_values is not None:
+        predicted += readmission_values.fillna(0) * 1.5
+        factor_rows.append(
+            {
+                'factor': 'Readmission exposure',
+                'weight': 1.5,
+                'signal': 'Readmission-pattern rows are treated as higher-complexity encounters.',
+            }
+        )
+    if survived_col:
+        survived_binary = _binary_outcome(frame[survived_col])
+        predicted += survived_binary.fillna(1).apply(lambda value: 0.0 if value >= 1 else 2.0)
+        factor_rows.append(
+            {
+                'factor': 'Adverse outcome signal',
+                'weight': 2.0,
+                'signal': 'Rows with non-survival outcomes are treated as likely to have longer inpatient complexity.',
+            }
+        )
+
+    frame['predicted_length_of_stay'] = predicted.clip(lower=0.5).round(1)
+    frame['predicted_los_delta'] = (frame['predicted_length_of_stay'] - frame['actual_length_of_stay']).round(1)
+    long_stay_cutoff = float(frame['predicted_length_of_stay'].quantile(0.8))
+    frame['los_prediction_band'] = frame['predicted_length_of_stay'].apply(
+        lambda value: 'Expected high LOS' if float(value) >= long_stay_cutoff else 'Routine LOS'
+    )
+
+    group_columns = [column for column in [department_col, diagnosis_col] if column and column in frame.columns]
+    group_rows: list[pd.DataFrame] = []
+    for column in group_columns:
+        grouped = _clean_group_field(frame[[column, 'actual_length_of_stay', 'predicted_length_of_stay']].copy(), column)
+        if grouped.empty:
+            continue
+        summary = grouped.groupby(column).agg(
+            record_count=('actual_length_of_stay', 'size'),
+            average_actual_length_of_stay=('actual_length_of_stay', 'mean'),
+            average_predicted_length_of_stay=('predicted_length_of_stay', 'mean'),
+        ).reset_index()
+        summary['dimension'] = column
+        group_rows.append(summary.rename(columns={column: 'segment'}))
+    group_table = pd.concat(group_rows, ignore_index=True) if group_rows else pd.DataFrame()
+    if not group_table.empty:
+        group_table['predicted_gap_days'] = (
+            group_table['average_predicted_length_of_stay'] - group_table['average_actual_length_of_stay']
+        ).round(1)
+        group_table = group_table.sort_values(
+            ['average_predicted_length_of_stay', 'record_count'],
+            ascending=[False, False],
+        ).reset_index(drop=True)
+
+    candidate_columns = [
+        column
+        for column in [
+            _resolve_column(frame, canonical_map, ['patient_id'], ['patient_id', 'entity_id', 'member_id']),
+            department_col,
+            diagnosis_col,
+            age_col,
+            'actual_length_of_stay',
+            'predicted_length_of_stay',
+            'predicted_los_delta',
+            'los_prediction_band',
+        ]
+        if column
+    ]
+    high_los_rows = frame.sort_values(['predicted_length_of_stay', 'actual_length_of_stay'], ascending=[False, False])[candidate_columns].head(20)
+    return {
+        'available': True,
+        'los_column': los_col,
+        'summary': {
+            'average_actual_length_of_stay': round(float(frame['actual_length_of_stay'].mean()), 1),
+            'average_predicted_length_of_stay': round(float(frame['predicted_length_of_stay'].mean()), 1),
+            'predicted_high_los_rows': int((frame['los_prediction_band'] == 'Expected high LOS').sum()),
+            'p90_predicted_length_of_stay': round(float(frame['predicted_length_of_stay'].quantile(0.9)), 1),
+        },
+        'factor_table': pd.DataFrame(factor_rows),
+        'group_table': group_table,
+        'high_los_rows': high_los_rows,
+        'narrative': 'LOS prediction uses a transparent rules-based estimate built from available acuity, comorbidity, readmission, and demographic signals so operations teams can focus on the encounters most likely to require longer stays.',
+    }
+
+
+def mortality_adverse_event_indicators(data: pd.DataFrame, canonical_map: dict[str, str]) -> dict[str, object]:
+    frame = data.copy()
+    survived_col = _resolve_column(frame, canonical_map, ['survived'], ['survived', 'alive', 'outcome'])
+    los_col = _resolve_column(frame, canonical_map, ['length_of_stay'], ['length_of_stay', 'los', 'stay_length'])
+    department_col = _resolve_column(frame, canonical_map, ['department'], ['department', 'unit'])
+    diagnosis_col = _resolve_column(frame, canonical_map, ['diagnosis_code'], ['diagnosis_code', 'primary_diagnosis'])
+    readmission_values, _ = _readmission_flag(frame, canonical_map)
+    risk_frame = _risk_detail_frame(frame, canonical_map)
+    if not risk_frame.empty:
+        frame = frame.join(risk_frame[['risk_score', 'risk_segment']], how='left')
+    if survived_col:
+        frame['survived_binary'] = _binary_outcome(frame[survived_col])
+    if los_col:
+        frame['length_of_stay_numeric'] = _safe_numeric(frame[los_col])
+    if 'survived_binary' not in frame.columns and readmission_values is None and 'length_of_stay_numeric' not in frame.columns and 'risk_score' not in frame.columns:
+        return {'available': False, 'reason': 'Outcome, LOS, readmission, or risk signals are needed for mortality and adverse-event indicators.'}
+
+    frame['mortality_indicator'] = 0.0
+    if 'survived_binary' in frame.columns:
+        frame['mortality_indicator'] = frame['survived_binary'].fillna(1).apply(lambda value: 0.0 if value >= 1 else 1.0)
+    if readmission_values is not None:
+        frame['readmission_indicator'] = readmission_values.fillna(0)
+    else:
+        frame['readmission_indicator'] = 0.0
+    if 'length_of_stay_numeric' in frame.columns and frame['length_of_stay_numeric'].notna().any():
+        los_threshold = float(frame['length_of_stay_numeric'].quantile(0.75))
+        frame['extended_stay_indicator'] = (frame['length_of_stay_numeric'] >= los_threshold).astype(float)
+    else:
+        frame['extended_stay_indicator'] = 0.0
+    if 'risk_score' in frame.columns:
+        risk_threshold = float(pd.to_numeric(frame['risk_score'], errors='coerce').fillna(0).quantile(0.75))
+        frame['high_risk_indicator'] = (pd.to_numeric(frame['risk_score'], errors='coerce').fillna(0) >= risk_threshold).astype(float)
+    else:
+        frame['high_risk_indicator'] = 0.0
+
+    frame['adverse_event_score'] = (
+        frame['mortality_indicator'] * 3.0
+        + frame['readmission_indicator'] * 2.0
+        + frame['extended_stay_indicator'] * 1.5
+        + frame['high_risk_indicator'] * 1.0
+    )
+    frame['adverse_event_band'] = frame['adverse_event_score'].apply(
+        lambda value: 'High' if float(value) >= 3.0 else 'Moderate' if float(value) >= 1.5 else 'Low'
+    )
+
+    indicator_rows = [
+        {
+            'indicator': 'Mortality rate',
+            'value': float(frame['mortality_indicator'].mean()) if 'mortality_indicator' in frame.columns else None,
+            'status': 'Available' if 'survived_binary' in frame.columns else 'Not available',
+        },
+        {
+            'indicator': 'Readmission-associated adverse rate',
+            'value': float(frame['readmission_indicator'].mean()) if 'readmission_indicator' in frame.columns else None,
+            'status': 'Available' if readmission_values is not None else 'Not available',
+        },
+        {
+            'indicator': 'Extended-stay adverse rate',
+            'value': float(frame['extended_stay_indicator'].mean()) if 'extended_stay_indicator' in frame.columns else None,
+            'status': 'Available' if 'length_of_stay_numeric' in frame.columns else 'Not available',
+        },
+        {
+            'indicator': 'High adverse-event burden',
+            'value': float((frame['adverse_event_band'] == 'High').mean()),
+            'status': 'Available',
+        },
+    ]
+
+    group_rows: list[pd.DataFrame] = []
+    for column in [department_col, diagnosis_col]:
+        if not column or column not in frame.columns:
+            continue
+        grouped = _clean_group_field(
+            frame[[column, 'mortality_indicator', 'readmission_indicator', 'extended_stay_indicator', 'adverse_event_score']].copy(),
+            column,
+        )
+        if grouped.empty:
+            continue
+        summary = grouped.groupby(column).agg(
+            record_count=('adverse_event_score', 'size'),
+            mortality_rate=('mortality_indicator', 'mean'),
+            readmission_rate=('readmission_indicator', 'mean'),
+            extended_stay_rate=('extended_stay_indicator', 'mean'),
+            average_adverse_event_score=('adverse_event_score', 'mean'),
+        ).reset_index()
+        summary['dimension'] = column
+        group_rows.append(summary.rename(columns={column: 'segment'}))
+    group_table = pd.concat(group_rows, ignore_index=True) if group_rows else pd.DataFrame()
+    if not group_table.empty:
+        group_table = group_table.sort_values(
+            ['average_adverse_event_score', 'record_count'],
+            ascending=[False, False],
+        ).reset_index(drop=True)
+
+    patient_col = _resolve_column(frame, canonical_map, ['patient_id'], ['patient_id', 'entity_id', 'member_id'])
+    candidate_columns = [
+        column
+        for column in [
+            patient_col,
+            department_col,
+            diagnosis_col,
+            'mortality_indicator',
+            'readmission_indicator',
+            'extended_stay_indicator',
+            'adverse_event_score',
+            'adverse_event_band',
+        ]
+        if column
+    ]
+    flagged_rows = frame.sort_values(['adverse_event_score'], ascending=False)[candidate_columns].head(20)
+    return {
+        'available': True,
+        'indicator_table': pd.DataFrame(indicator_rows),
+        'group_table': group_table,
+        'flagged_rows': flagged_rows,
+        'narrative': 'Adverse-event indicators combine mortality, readmission, prolonged stay, and high-risk concentration so clinical teams can review the cohorts with the strongest combined burden first.',
+    }
+
+
+def population_health_analytics(data: pd.DataFrame, canonical_map: dict[str, str]) -> dict[str, object]:
+    frame = data.copy()
+    diagnosis_col = _resolve_column(frame, canonical_map, ['diagnosis_code'], ['diagnosis_code', 'primary_diagnosis'])
+    department_col = _resolve_column(frame, canonical_map, ['department'], ['department', 'unit'])
+    payer_col = _resolve_column(frame, canonical_map, ['payer', 'plan'], ['payer', 'payor', 'plan'])
+    if not any([diagnosis_col, department_col, payer_col]):
+        return {'available': False, 'reason': 'Diagnosis, department, or payer fields are needed for population health rollups.'}
+
+    risk_frame = _risk_detail_frame(frame, canonical_map)
+    if not risk_frame.empty:
+        frame = frame.join(risk_frame[['risk_score', 'risk_segment']], how='left')
+    readmission_values, _ = _readmission_flag(frame, canonical_map)
+    if readmission_values is not None:
+        frame['readmission_flag'] = readmission_values.fillna(0)
+
+    dimensions = [('Diagnosis burden', diagnosis_col), ('Department burden', department_col), ('Payer burden', payer_col)]
+    prevalence_rows: list[pd.DataFrame] = []
+    top_population_insights: list[str] = []
+    for label, column in dimensions:
+        if not column or column not in frame.columns:
+            continue
+        grouped = _clean_group_field(frame[[column] + [name for name in ['risk_score', 'risk_segment', 'readmission_flag'] if name in frame.columns]].copy(), column)
+        if grouped.empty:
+            continue
+        summary = grouped.groupby(column).agg(record_count=(column, 'size')).reset_index()
+        summary['population_share'] = summary['record_count'] / max(int(len(grouped)), 1)
+        if 'risk_score' in grouped.columns:
+            summary = summary.merge(grouped.groupby(column)['risk_score'].mean().reset_index(name='average_risk_score'), on=column, how='left')
+            summary = summary.merge(grouped.groupby(column)['risk_segment'].apply(lambda series: (series == 'High Risk').mean()).reset_index(name='high_risk_share'), on=column, how='left')
+        if 'readmission_flag' in grouped.columns:
+            summary = summary.merge(grouped.groupby(column)['readmission_flag'].mean().reset_index(name='readmission_rate'), on=column, how='left')
+        summary['dimension'] = label
+        renamed = summary.rename(columns={column: 'segment'})
+        prevalence_rows.append(renamed)
+        strongest = renamed.sort_values(['population_share', 'record_count'], ascending=[False, False]).iloc[0]
+        top_population_insights.append(
+            f"{label} is currently led by {strongest['segment']} ({float(strongest['population_share']):.1%} of visible records)."
+        )
+    prevalence_table = pd.concat(prevalence_rows, ignore_index=True) if prevalence_rows else pd.DataFrame()
+    if prevalence_table.empty:
+        return {'available': False, 'reason': 'Population health rollups could not be assembled from the current dataset.'}
+    prevalence_table = prevalence_table.sort_values(['population_share', 'record_count'], ascending=[False, False]).reset_index(drop=True)
+    return {
+        'available': True,
+        'prevalence_table': prevalence_table,
+        'summary_cards': [
+            {'label': 'Population segments', 'value': f'{len(prevalence_table):,}'},
+            {'label': 'Dimensions covered', 'value': f"{prevalence_table['dimension'].nunique():,}"},
+            {'label': 'Largest segment share', 'value': f"{float(prevalence_table['population_share'].max()):.1%}"},
+            {'label': 'High-risk population views', 'value': 'Available' if 'high_risk_share' in prevalence_table.columns else 'Limited'},
+        ],
+        'insights': top_population_insights[:4],
+        'narrative': 'Population health analytics roll up diagnosis, department, and payer burden so teams can quickly see where the largest and highest-risk populations are concentrated.',
+    }
+
+
+def clinical_outcome_benchmarks(data: pd.DataFrame, canonical_map: dict[str, str]) -> dict[str, object]:
+    benchmark_rows: list[pd.DataFrame] = []
+    notes: list[str] = []
+    available_views = 0
+    for label, benchmark_type in [
+        ('Stage benchmark', 'Cancer Stage Benchmark'),
+        ('Smoking benchmark', 'Smoking vs Non-Smoking Cohorts'),
+    ]:
+        result = benchmarking_analysis(data, canonical_map, benchmark_type)
+        if not result.get('available'):
+            notes.append(str(result.get('reason', f'{label} is not available.')))
+            continue
+        available_views += 1
+        table = result.get('summary_table', pd.DataFrame())
+        if not isinstance(table, pd.DataFrame):
+            table = pd.DataFrame(table)
+        table = table.copy()
+        if table.empty:
+            continue
+        table['benchmark_view'] = label
+        benchmark_rows.append(table)
+    summary_table = pd.concat(benchmark_rows, ignore_index=True, sort=False) if benchmark_rows else pd.DataFrame()
+    if summary_table.empty:
+        return {'available': False, 'reason': 'Outcome benchmark comparisons need stage, smoking, or other subgroup fields with enough clinical signal.'}
+    summary_cards = [
+        {'label': 'Benchmark views', 'value': f'{available_views:,}'},
+        {'label': 'Groups compared', 'value': f'{len(summary_table):,}'},
+        {'label': 'Outcome measures', 'value': f"{len([column for column in ['survival_rate', 'high_risk_share', 'average_treatment_duration_days'] if column in summary_table.columns]):,}"},
+        {'label': 'Top benchmark', 'value': str(summary_table.iloc[0].get('benchmark_view', 'Available'))},
+    ]
+    return {
+        'available': True,
+        'summary_cards': summary_cards,
+        'summary_table': summary_table,
+        'notes': notes,
+        'narrative': 'Clinical outcome benchmarks compare the strongest available subgroup views so teams can spot which stages or population groups are underperforming versus peer cohorts.',
+    }
+
+
 def _prepare_clinical_frame(data: pd.DataFrame, canonical_map: dict[str, str]) -> dict[str, object]:
     frame = _risk_detail_frame(data, canonical_map)
     if frame.empty:
@@ -1408,6 +2620,135 @@ def _prepare_clinical_frame(data: pd.DataFrame, canonical_map: dict[str, str]) -
         'outcome_col': outcome_col,
         'diagnosis_date_col': diagnosis_date_col,
         'treatment_end_col': treatment_end_col,
+    }
+
+
+def _duration_intelligence(frame: pd.DataFrame, date_start_col: str | None, date_end_col: str | None, stage_col: str | None, treatment_col: str | None) -> dict[str, object]:
+    if not date_start_col or not date_end_col:
+        return {
+            'available': False,
+            'reason': 'Diagnosis/admission and discharge/treatment-end dates are needed for duration intelligence.',
+            'duration_summary': None,
+            'duration_distribution': pd.DataFrame(),
+            'duration_by_stage': pd.DataFrame(),
+            'duration_by_treatment': pd.DataFrame(),
+            'duration_by_cohort': pd.DataFrame(),
+            'duration_trend': pd.DataFrame(),
+            'insights': [],
+        }
+
+    working = frame.copy()
+    working[date_start_col] = pd.to_datetime(working[date_start_col], errors='coerce')
+    working[date_end_col] = pd.to_datetime(working[date_end_col], errors='coerce')
+    working['treatment_duration_days'] = (working[date_end_col] - working[date_start_col]).dt.days
+    working = working.dropna(subset=['treatment_duration_days']).copy()
+    working = working[working['treatment_duration_days'] >= 0]
+    if working.empty:
+        return {
+            'available': False,
+            'reason': 'The current date fields did not produce any valid non-negative event durations.',
+            'duration_summary': None,
+            'duration_distribution': pd.DataFrame(),
+            'duration_by_stage': pd.DataFrame(),
+            'duration_by_treatment': pd.DataFrame(),
+            'duration_by_cohort': pd.DataFrame(),
+            'duration_trend': pd.DataFrame(),
+            'insights': [],
+        }
+
+    durations = pd.to_numeric(working['treatment_duration_days'], errors='coerce').dropna()
+    duration_summary = {
+        'average_duration_days': float(durations.mean()),
+        'median_duration_days': float(durations.median()),
+        'p90_duration_days': float(durations.quantile(0.9)),
+        'records_with_duration': int(len(durations)),
+    }
+    duration_bins = pd.cut(
+        durations,
+        bins=[-1, 30, 90, 180, 365, float('inf')],
+        labels=['0-30 days', '31-90 days', '91-180 days', '181-365 days', '365+ days'],
+    )
+    duration_distribution = duration_bins.value_counts(sort=False).reset_index()
+    duration_distribution.columns = ['duration_band', 'record_count']
+    duration_distribution['percentage'] = duration_distribution['record_count'] / max(int(duration_distribution['record_count'].sum()), 1)
+
+    duration_by_stage = pd.DataFrame()
+    if stage_col and stage_col in working.columns:
+        stage_working = _clean_group_field(working[[stage_col, 'treatment_duration_days']].copy(), stage_col)
+        if not stage_working.empty:
+            duration_by_stage = stage_working.groupby(stage_col).agg(
+                record_count=('treatment_duration_days', 'size'),
+                average_treatment_duration_days=('treatment_duration_days', 'mean'),
+                median_treatment_duration_days=('treatment_duration_days', 'median'),
+            ).reset_index().sort_values('average_treatment_duration_days', ascending=False)
+
+    duration_by_treatment = pd.DataFrame()
+    if treatment_col and treatment_col in working.columns:
+        treatment_working = _clean_group_field(working[[treatment_col, 'treatment_duration_days']].copy(), treatment_col)
+        if not treatment_working.empty:
+            duration_by_treatment = treatment_working.groupby(treatment_col).agg(
+                record_count=('treatment_duration_days', 'size'),
+                average_treatment_duration_days=('treatment_duration_days', 'mean'),
+                median_treatment_duration_days=('treatment_duration_days', 'median'),
+            ).reset_index().sort_values('average_treatment_duration_days', ascending=False)
+
+    duration_by_cohort = pd.DataFrame()
+    cohort_rows: list[dict[str, object]] = []
+    if 'age_band' in working.columns:
+        older = working[working['age_band'].astype(str) == '65+']
+        if not older.empty:
+            cohort_rows.append({
+                'cohort_name': 'Older adults (65+)',
+                'record_count': int(len(older)),
+                'average_treatment_duration_days': float(pd.to_numeric(older['treatment_duration_days'], errors='coerce').mean()),
+            })
+    if stage_col and stage_col in working.columns:
+        high_stage = working[working[stage_col].astype(str).str.contains('iii|iv', case=False, na=False)]
+        if not high_stage.empty:
+            cohort_rows.append({
+                'cohort_name': 'Higher-stage cohort',
+                'record_count': int(len(high_stage)),
+                'average_treatment_duration_days': float(pd.to_numeric(high_stage['treatment_duration_days'], errors='coerce').mean()),
+            })
+    if treatment_col and treatment_col in working.columns:
+        top_counts = working[treatment_col].astype(str).value_counts()
+        if not top_counts.empty:
+            top_label = str(top_counts.index[0])
+            top_group = working[working[treatment_col].astype(str) == top_label]
+            cohort_rows.append({
+                'cohort_name': f'{top_label} cohort',
+                'record_count': int(len(top_group)),
+                'average_treatment_duration_days': float(pd.to_numeric(top_group['treatment_duration_days'], errors='coerce').mean()),
+            })
+    if cohort_rows:
+        duration_by_cohort = pd.DataFrame(cohort_rows).sort_values('average_treatment_duration_days', ascending=False)
+
+    duration_trend = pd.DataFrame()
+    trend_working = working[[date_start_col, 'treatment_duration_days']].dropna().copy()
+    if not trend_working.empty:
+        duration_trend = trend_working.assign(month=trend_working[date_start_col].dt.to_period('M').dt.to_timestamp()).groupby('month').agg(
+            average_treatment_duration_days=('treatment_duration_days', 'mean'),
+            record_count=('treatment_duration_days', 'size'),
+        ).reset_index()
+
+    insights = [f"Average observed duration is {float(duration_summary['average_duration_days']):.1f} days across {int(duration_summary['records_with_duration'])} records."]
+    if not duration_by_stage.empty:
+        top_stage = duration_by_stage.iloc[0]
+        insights.append(f"{top_stage[stage_col]} has the longest average duration at {float(top_stage['average_treatment_duration_days']):.1f} days.")
+    if not duration_by_treatment.empty:
+        top_treatment = duration_by_treatment.iloc[0]
+        insights.append(f"{top_treatment[treatment_col]} is currently the longest treatment path at {float(top_treatment['average_treatment_duration_days']):.1f} days.")
+
+    return {
+        'available': True,
+        'working_frame': working,
+        'duration_summary': duration_summary,
+        'duration_distribution': duration_distribution,
+        'duration_by_stage': duration_by_stage,
+        'duration_by_treatment': duration_by_treatment,
+        'duration_by_cohort': duration_by_cohort,
+        'duration_trend': duration_trend,
+        'insights': insights,
     }
 
 
@@ -1799,10 +3140,14 @@ def care_pathway_view(data: pd.DataFrame, canonical_map: dict[str, str]) -> dict
 
     bottleneck_summary = pd.DataFrame()
     poor_outcome_pathways = pd.DataFrame()
+    pathway_summary_table = pd.DataFrame()
+    average_duration_by_pathway = pd.DataFrame()
+    action_recommendations: list[str] = []
     summary_text = 'Care pathway intelligence is using observed treatment duration and outcome patterns to highlight the most review-worthy pathways.'
 
     if not pathway.empty:
         pathway_working = pathway.copy()
+        pathway_working['pathway_label'] = pathway_working[stage_col].astype(str) + ' -> ' + pathway_working[treatment_col].astype(str)
         if 'average_treatment_duration_days' in pathway_working.columns:
             pathway_working['duration_gap_vs_pathway_average'] = (
                 pathway_working['average_treatment_duration_days'] - pathway_working['average_treatment_duration_days'].mean()
@@ -1817,6 +3162,8 @@ def care_pathway_view(data: pd.DataFrame, canonical_map: dict[str, str]) -> dict
             overall_survival = None
             pathway_working['survival_gap_vs_pathway_average'] = pd.NA
 
+        status_labels: list[str] = []
+        suggested_actions: list[str] = []
         bottleneck_rows: list[dict[str, object]] = []
         for _, row in pathway_working.iterrows():
             bottleneck_score = 0.0
@@ -1827,6 +3174,15 @@ def care_pathway_view(data: pd.DataFrame, canonical_map: dict[str, str]) -> dict
             if pd.notna(row.get('survival_gap_vs_pathway_average')) and float(row['survival_gap_vs_pathway_average']) < 0:
                 bottleneck_score += abs(float(row['survival_gap_vs_pathway_average'])) * 2.0
                 reasons.append(f"survival is {abs(float(row['survival_gap_vs_pathway_average'])):.1%} below the pathway average")
+            if bottleneck_score >= 0.40:
+                status_labels.append('Review Now')
+                suggested_actions.append('Review discharge timing, care transitions, and treatment sequencing for this pathway.')
+            elif bottleneck_score > 0:
+                status_labels.append('Monitor')
+                suggested_actions.append('Compare this pathway with stronger-performing peer pathways and review duration drivers.')
+            else:
+                status_labels.append('Stable')
+                suggested_actions.append('Use as a reference pathway when reviewing more delayed or lower-outcome groups.')
             if bottleneck_score <= 0:
                 continue
             bottleneck_rows.append({
@@ -1845,8 +3201,36 @@ def care_pathway_view(data: pd.DataFrame, canonical_map: dict[str, str]) -> dict
         if 'survival_rate' in pathway_working.columns and pathway_working['survival_rate'].notna().any():
             poor_outcome_pathways = pathway_working.sort_values(['survival_rate', 'record_count'], ascending=[True, False]).head(10).reset_index(drop=True)
 
+        pathway_working['pathway_status'] = status_labels
+        pathway_working['suggested_action'] = suggested_actions
+        pathway_summary_columns = [
+            stage_col,
+            treatment_col,
+            'record_count',
+            'average_treatment_duration_days',
+            'survival_rate',
+            'pathway_status',
+            'suggested_action',
+        ]
+        pathway_summary_table = pathway_working[[column for column in pathway_summary_columns if column in pathway_working.columns]].copy()
+        average_duration_by_pathway = pathway_working[[column for column in ['pathway_label', 'record_count', 'average_treatment_duration_days', 'survival_rate', 'pathway_status'] if column in pathway_working.columns]].copy()
         if not bottleneck_summary.empty:
             top_pathway = bottleneck_summary.iloc[0]
+            action_recommendations.append(
+                f"Start with {top_pathway['pathway']}, where pathway duration or outcomes are materially weaker than peer pathways."
+            )
+        if not poor_outcome_pathways.empty:
+            weakest = poor_outcome_pathways.iloc[0]
+            action_recommendations.append(
+                f"Review the {weakest[stage_col]} -> {weakest[treatment_col]} pathway for poor outcomes and discharge or follow-up variation."
+            )
+        if 'average_treatment_duration_days' in pathway_working.columns and pathway_working['average_treatment_duration_days'].notna().any():
+            longest = pathway_working.sort_values(['average_treatment_duration_days', 'record_count'], ascending=[False, False]).iloc[0]
+            action_recommendations.append(
+                f"Benchmark {longest['pathway_label']} against shorter-duration pathways to identify avoidable delays in the care journey."
+            )
+
+        if not bottleneck_summary.empty:
             summary_text = (
                 f"The highest-priority pathway review is currently {top_pathway['pathway']}, "
                 f"which combines longer duration or weaker outcomes than peer pathways."
@@ -1866,6 +3250,9 @@ def care_pathway_view(data: pd.DataFrame, canonical_map: dict[str, str]) -> dict
         'treatment_column': treatment_col,
         'bottleneck_summary': bottleneck_summary,
         'poor_outcome_pathways': poor_outcome_pathways,
+        'pathway_summary_table': pathway_summary_table,
+        'average_duration_by_pathway': average_duration_by_pathway,
+        'action_recommendations': action_recommendations,
         'summary': summary_text,
     }
 
@@ -1987,6 +3374,10 @@ def run_healthcare_analysis(data: pd.DataFrame, canonical_map: dict[str, str], s
         'provider': provider_analysis(data, canonical_map),
         'diagnosis': diagnosis_procedure_analysis(data, canonical_map),
         'readmission': readmission_risk_analytics(data, canonical_map),
+        'length_of_stay_prediction': length_of_stay_prediction(data, canonical_map),
+        'mortality_adverse_events': mortality_adverse_event_indicators(data, canonical_map),
+        'population_health': population_health_analytics(data, canonical_map),
+        'clinical_outcome_benchmarks': clinical_outcome_benchmarks(data, canonical_map),
         'risk_segmentation': risk,
         'ai_insight_summary': ai_summary,
         'anomaly_detection': anomaly,
