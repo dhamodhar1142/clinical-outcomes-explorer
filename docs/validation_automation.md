@@ -9,11 +9,13 @@ This repository includes a reusable Codex-friendly validation workflow for uploa
 - support both quick and full validation modes
 
 ## Default full-workflow fixture
-The default full-validation healthcare fixture is:
+The default local full-validation healthcare fixture is:
 
 ```text
 tests/fixtures/datasets/STG_EHP__VIST.csv
 ```
+
+This fixture is intended for local/manual validation and is not meant to be a normal CI-tracked asset going forward.
 
 Fixture expectations:
 - dataset name: `STG_EHP__VIST.csv`
@@ -35,16 +37,48 @@ This is a large-file fixture. The validator explicitly checks that large-file ha
 - Quick validation:
   - fixture key: `small-healthcare`
   - dataset path: `tests/fixtures/datasets/SMALL_HEALTHCARE_VISITS.csv`
+  - tracked in git and safe for CI
 - Local full validation:
   - fixture key: `default`
   - dataset path: `tests/fixtures/datasets/STG_EHP__VIST.csv`
+  - local/manual fixture
 - Local release validation:
   - fixture key: `default`
   - dataset path: `tests/fixtures/datasets/STG_EHP__VIST.csv`
+  - local/manual fixture
 - CI quick validation:
   - fixture key: `small-healthcare`
 - CI manual release validation:
   - fixture key: `small-healthcare` by default, overrideable to `default` when the environment and checkout support the large fixture
+
+## Large fixture handling
+Recommended hygiene:
+- keep the small fixtures in git for CI and shared development
+- keep `STG_EHP__VIST.csv` as a local/manual validation asset
+- do not rely on the large fixture being present in fresh public clones
+
+The validator resolves the local large fixture in this order:
+1. `SMART_DATASET_ANALYZER_LARGE_FIXTURE_PATH`
+2. `tests/fixtures/datasets/STG_EHP__VIST.csv`
+3. `data/local_fixtures/STG_EHP__VIST.csv`
+
+To restore local full validation on a fresh clone, place the file in either:
+
+```text
+tests/fixtures/datasets/STG_EHP__VIST.csv
+```
+
+or:
+
+```text
+data/local_fixtures/STG_EHP__VIST.csv
+```
+
+or set:
+
+```powershell
+$env:SMART_DATASET_ANALYZER_LARGE_FIXTURE_PATH="C:\path\to\STG_EHP__VIST.csv"
+```
 
 ## Commands
 

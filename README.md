@@ -223,6 +223,24 @@ Important deployment notes:
 
 See `docs/deployment.md` for a concise deployment checklist.
 
+The repository also includes a static product layer in `landing_page.html` for demo, launch, or marketing-oriented presentation alongside the app.
+
+## First-run product experience
+
+The app now supports a more demo-ready first run:
+
+- a `Try Demo Dataset` action when no uploaded dataset is active
+- a guided walkthrough path:
+  - upload dataset
+  - view overview
+  - check readiness
+  - explore insights
+  - export reports
+- explicit runtime status indicators for:
+  - uploaded vs demo dataset activity
+  - sampled vs full analysis mode
+  - readiness score interpretation
+
 ## CI and release safety
 
 The repository now includes a GitHub Actions workflow that runs:
@@ -233,6 +251,44 @@ The repository now includes a GitHub Actions workflow that runs:
 - browser smoke coverage
 
 This keeps release candidates and pilot/demo builds gated on the same core checks used in local validation.
+
+## Validation fixture strategy
+
+The repository uses two validation fixture tiers:
+
+- CI-friendly fixtures that stay in git:
+  - `tests/fixtures/datasets/SMALL_HEALTHCARE_VISITS.csv`
+  - `tests/fixtures/datasets/ALT_EHP__VIST.csv`
+  - smaller malformed and ambiguous fixtures used by automated checks
+- local/manual large fixture:
+  - `tests/fixtures/datasets/STG_EHP__VIST.csv`
+
+Recommended usage:
+
+- quick validation and CI:
+  - use `small-healthcare`
+- local full validation and local release validation:
+  - use `default` / `STG_EHP__VIST.csv`
+
+The large full-workflow fixture is intended to be local/manual and may not be present in a fresh public clone. To restore full local validation, place the file at either:
+
+```text
+tests/fixtures/datasets/STG_EHP__VIST.csv
+```
+
+or:
+
+```text
+data/local_fixtures/STG_EHP__VIST.csv
+```
+
+or set:
+
+```powershell
+$env:SMART_DATASET_ANALYZER_LARGE_FIXTURE_PATH="C:\path\to\STG_EHP__VIST.csv"
+```
+
+See [docs/validation_automation.md](C:\Users\dhamo\OneDrive\Desktop\clinical-outcomes-explorer\docs\validation_automation.md) for the full command map and fixture behavior.
 
 ## Demo dataset guidance
 

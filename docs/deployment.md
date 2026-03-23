@@ -79,6 +79,45 @@ Recommended profile guidance:
 streamlit run app.py
 ```
 
+The app is designed to start directly with `streamlit run app.py` and degrade safely when optional integrations are unavailable.
+
+## Streamlit Community Cloud
+
+Recommended path:
+
+1. Push the repository to GitHub.
+2. Open [https://share.streamlit.io](https://share.streamlit.io).
+3. Select the repository and target branch.
+4. Set the main file path to `app.py`.
+5. Deploy.
+
+Recommended Streamlit Cloud notes:
+
+- keep `requirements.txt` committed at the repo root
+- keep the `data/` directory committed so built-in demo datasets remain available
+- use the base runtime first; optional integrations are not required for startup
+- if you use secrets, add them through the Streamlit Cloud secrets manager rather than hardcoding them
+
+### Updating the deployed app
+
+- push a new commit to the configured branch
+- Streamlit Cloud will rebuild and redeploy automatically
+- if the app does not pick up the change immediately, use the app management page to reboot the app
+
+### Logs and debugging
+
+- use the Streamlit Cloud app management page to inspect build logs and runtime logs
+- if a deployment issue appears only in the cloud environment, compare it against:
+  - `python -m compileall app.py src ui tests scripts`
+  - `python -c "import app; print('app import ok')"`
+  - `.\scripts\run_quick_validation.ps1`
+
+### Demo-ready behavior
+
+- first-time users can use the built-in `Try Demo Dataset` path from the empty state
+- uploaded dataset mode remains authoritative until the user explicitly switches source
+- large uploaded CSV files still use the same validated hybrid streaming path in cloud environments
+
 ## Streamlit deployment checklist
 
 - ensure `app.py` is present at the repository root

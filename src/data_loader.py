@@ -10,10 +10,11 @@ from pathlib import Path
 
 import pandas as pd
 from pandas.errors import ParserError
+from src.runtime_paths import data_path
 from src.schema_detection import detect_structure
 
 
-DATA_DIR = Path('data')
+DATA_DIR = data_path()
 DEMO_DATASETS = {
     'Healthcare Operations Demo': {
         'path': DATA_DIR / 'synthetic_hospital_data.csv',

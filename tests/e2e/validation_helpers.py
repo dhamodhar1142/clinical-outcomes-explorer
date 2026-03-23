@@ -416,10 +416,10 @@ def run_cross_dataset_cache_validation(*, python_executable: str) -> ValidationR
     fixture_a = SMALL_HEALTHCARE_FIXTURE
     fixture_b = SECONDARY_HEALTHCARE_FIXTURE
     artifact_dir = ensure_artifact_dir('cache', 'cross_dataset')
-    inspection_a = inspect_fixture_schema(fixture_a.path, fixture_a)
-    inspection_b = inspect_fixture_schema(fixture_b.path, fixture_b)
+    inspection_a = inspect_fixture_schema(fixture_a.resolve_path(), fixture_a)
+    inspection_b = inspect_fixture_schema(fixture_b.resolve_path(), fixture_b)
     report = ValidationReport(
-        dataset_path=f'{fixture_a.path};{fixture_b.path}',
+        dataset_path=f'{fixture_a.resolve_path()};{fixture_b.resolve_path()}',
         dataset_name='cross-dataset-cache-validation',
         mode='cache',
         used_browser=False,

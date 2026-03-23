@@ -35,7 +35,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     fixture = get_fixture(args.fixture)
-    dataset_path = Path(args.dataset).resolve() if args.dataset else fixture.path.resolve()
+    dataset_path = Path(args.dataset).resolve() if args.dataset else fixture.resolve_path().resolve()
     artifact_dir = ensure_artifact_dir(args.mode, dataset_path.name)
     command = ' '.join(sys.argv)
     write_partial_state(

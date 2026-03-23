@@ -240,6 +240,13 @@ def load_primary_dataset_from_ui(
     ui: Any,
     session_state: dict[str, Any],
 ) -> PrimaryDatasetSelection:
+    pending_source_mode = str(session_state.pop('pending_dataset_source_mode', '') or '').strip()
+    if pending_source_mode in DATASET_SOURCE_OPTIONS:
+        session_state['dataset_source_mode'] = pending_source_mode
+    pending_demo_dataset_name = str(session_state.pop('pending_demo_dataset_name', '') or '').strip()
+    if pending_demo_dataset_name and pending_demo_dataset_name in DEMO_DATASETS:
+        session_state['demo_dataset_name'] = pending_demo_dataset_name
+
     sidebar_caption = getattr(sidebar, 'caption', None)
     if callable(sidebar_caption):
         sidebar_caption('Dataset source')
@@ -393,6 +400,30 @@ def load_primary_dataset_from_ui(
         )
         ui.error(str(error))
         ui.caption('Try a cleaner extract with one header row, clearer date/number columns, and fewer fully empty fields.')
+        return PrimaryDatasetSelection(
+            source_mode=source_mode,
+            data=None,
+            original_lookup=original_lookup,
+            dataset_name=uploaded.name,
+            source_meta=source_meta,
+        )
+    except Exception as error:
+        load_progress.empty()
+        load_status.empty()
+        logger_module.log_platform_exception(
+            'dataset_load_unexpected_failure',
+            error,
+            logger_name='ingestion',
+            operation_type='dataset_upload',
+            dataset_name=uploaded.name,
+            source_mode='upload',
+            file_size_mb=round(file_size_mb, 3),
+        )
+        ui.error('The upload could not be opened safely in this environment.')
+        ui.caption(
+            'Try a CSV or Excel export with one header row, fewer fully empty columns, and consistent date/number formatting. '
+            'If the issue persists, use the demo dataset to confirm the app is healthy, then retry with a narrower extract.'
+        )
         return PrimaryDatasetSelection(
             source_mode=source_mode,
             data=None,

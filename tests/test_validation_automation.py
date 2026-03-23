@@ -12,6 +12,7 @@ import scripts.run_validation_task as validation_task
 from tests.e2e.fixture_registry import (
     AMBIGUOUS_MAPPING_FIXTURE,
     MALFORMED_FIXTURE,
+    PRIMARY_FULL_VALIDATION_FIXTURE,
     SECONDARY_HEALTHCARE_FIXTURE,
     SMALL_HEALTHCARE_FIXTURE,
     get_default_fixture,
@@ -100,7 +101,7 @@ class ValidationAutomationTests(unittest.TestCase):
         self.assertIn('reason', readiness)
 
     def test_fixture_schema_inspection_is_case_normalized(self) -> None:
-        inspection = inspect_fixture_schema(SMALL_HEALTHCARE_FIXTURE.path, SMALL_HEALTHCARE_FIXTURE)
+        inspection = inspect_fixture_schema(SMALL_HEALTHCARE_FIXTURE.resolve_path(), SMALL_HEALTHCARE_FIXTURE)
         self.assertIn('VIS_EN', inspection['date_columns_detected'])
         self.assertIn('REFR_NO', inspection['identifier_columns_detected'])
         self.assertEqual(inspection['missing_expected_columns'], [])
@@ -118,6 +119,23 @@ class ValidationAutomationTests(unittest.TestCase):
         self.assertTrue(SECONDARY_HEALTHCARE_FIXTURE.path.exists())
         self.assertTrue(MALFORMED_FIXTURE.path.exists())
         self.assertTrue(AMBIGUOUS_MAPPING_FIXTURE.path.exists())
+
+    def test_large_fixture_resolution_prefers_env_override(self) -> None:
+        import tempfile
+        import os
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            local_copy = Path(temp_dir) / PRIMARY_FULL_VALIDATION_FIXTURE.dataset_name
+            local_copy.write_text('REFR_NO,PAT_ID\n1,2\n', encoding='utf-8')
+            original = os.environ.get('SMART_DATASET_ANALYZER_LARGE_FIXTURE_PATH')
+            os.environ['SMART_DATASET_ANALYZER_LARGE_FIXTURE_PATH'] = str(local_copy)
+            try:
+                self.assertEqual(PRIMARY_FULL_VALIDATION_FIXTURE.resolve_path(), local_copy)
+            finally:
+                if original is None:
+                    os.environ.pop('SMART_DATASET_ANALYZER_LARGE_FIXTURE_PATH', None)
+                else:
+                    os.environ['SMART_DATASET_ANALYZER_LARGE_FIXTURE_PATH'] = original
 
     def test_ambiguous_mapping_fixture_is_registered_for_manual_override_e2e(self) -> None:
         self.assertEqual(AMBIGUOUS_MAPPING_FIXTURE.dataset_name, 'AMBIGUOUS_ENCOUNTER_VISITS.csv')

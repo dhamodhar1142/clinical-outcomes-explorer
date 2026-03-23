@@ -10,3 +10,5 @@ data/cache/
 data/error_logs/
 data/logs/
 data/storage/
+data/local_fixtures/
+tests/fixtures/datasets/STG_EHP__VIST.csv

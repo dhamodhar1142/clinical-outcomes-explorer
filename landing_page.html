@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Clinverity</title>
+  <style>
+    :root {
+      --bg: #dce8f2;
+      --panel: #e8f1f7;
+      --panel-strong: #f5f9fc;
+      --text: #0f172a;
+      --muted: #4b647c;
+      --primary: #1f4e79;
+      --accent: #14b8a6;
+      --border: #c9d9e6;
+      --shadow: 0 18px 44px rgba(15, 23, 42, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, "Segoe UI", Arial, sans-serif;
+      background:
+        radial-gradient(circle at top right, rgba(20,184,166,0.08), transparent 28%),
+        linear-gradient(180deg, #edf5fb 0%, var(--bg) 100%);
+      color: var(--text);
+      line-height: 1.55;
+    }
+    .shell {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 32px 20px 64px;
+    }
+    .hero, .section, .cta {
+      background: rgba(245, 249, 252, 0.9);
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+    }
+    .hero {
+      padding: 40px;
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 24px;
+      align-items: center;
+    }
+    .eyebrow {
+      color: var(--primary);
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    h1 {
+      margin: 10px 0 12px;
+      font-size: clamp(2.2rem, 5vw, 3.8rem);
+      line-height: 1.02;
+    }
+    .subtitle {
+      color: var(--muted);
+      font-size: 1.08rem;
+      max-width: 640px;
+    }
+    .actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 22px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 0 18px;
+      border-radius: 14px;
+      text-decoration: none;
+      font-weight: 700;
+      border: 1px solid transparent;
+    }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-secondary { background: var(--panel); color: var(--text); border-color: var(--border); }
+    .hero-card, .feature, .shot {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 18px;
+    }
+    .hero-grid, .features, .shots {
+      display: grid;
+      gap: 16px;
+    }
+    .hero-grid { grid-template-columns: 1fr 1fr; }
+    .features { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .shots { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .section {
+      padding: 28px;
+      margin-top: 24px;
+    }
+    .section h2 { margin-top: 0; font-size: 1.6rem; }
+    .muted { color: var(--muted); }
+    .shot {
+      min-height: 180px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      background:
+        linear-gradient(180deg, rgba(31,78,121,.08), rgba(20,184,166,.06)),
+        var(--panel-strong);
+    }
+    .cta {
+      margin-top: 24px;
+      padding: 28px;
+      text-align: center;
+    }
+    ul { margin: 0; padding-left: 18px; }
+    @media (max-width: 900px) {
+      .hero { grid-template-columns: 1fr; }
+      .hero-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div>
+        <div class="eyebrow">Clinverity</div>
+        <h1>Clinical Data Quality &amp; Analytics Platform for Healthcare Datasets</h1>
+        <p class="subtitle">Upload healthcare extracts, validate dataset readiness, explore healthcare intelligence, and generate audit-ready outputs from a single clinically oriented workflow.</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="./">Launch App</a>
+          <a class="btn btn-secondary" href="./docs/deployment.md">Deployment Guide</a>
+        </div>
+      </div>
+      <div class="hero-grid">
+        <div class="hero-card"><strong>Dataset ingestion</strong><div class="muted">CSV and Excel uploads with large-file aware streaming and persisted session context.</div></div>
+        <div class="hero-card"><strong>Readiness scoring</strong><div class="muted">Quality, semantics, trust, and module support surfaced before downstream analysis.</div></div>
+        <div class="hero-card"><strong>Healthcare intelligence</strong><div class="muted">Encounter-aware analytics, cohorts, trend review, and trust-weighted interpretation.</div></div>
+        <div class="hero-card"><strong>Governed exports</strong><div class="muted">Stakeholder-ready reports with lineage, disclosure, and external-reporting gates.</div></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>What It Does</h2>
+      <div class="features">
+        <div class="feature"><strong>Dataset ingestion</strong><p class="muted">Load uploaded healthcare datasets or launch a guided demo instantly.</p></div>
+        <div class="feature"><strong>Data quality + readiness scoring</strong><p class="muted">Profile fields, detect blockers, and understand what the dataset can support now.</p></div>
+        <div class="feature"><strong>Healthcare intelligence</strong><p class="muted">Review trend, cohort, and encounter-oriented analysis with trust disclosures.</p></div>
+        <div class="feature"><strong>Insights + export</strong><p class="muted">Create executive, analyst, and data-readiness outputs from the same workflow.</p></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Key Features</h2>
+      <div class="features">
+        <div class="feature"><strong>Large dataset support</strong><p class="muted">Hybrid streaming CSV handling with authoritative source-row fidelity.</p></div>
+        <div class="feature"><strong>Persistent dataset handling</strong><p class="muted">Uploaded datasets remain active across reruns until the user changes source.</p></div>
+        <div class="feature"><strong>Trust + uncertainty reporting</strong><p class="muted">Native-vs-derived confidence, benchmark calibration, and export safety gates.</p></div>
+        <div class="feature"><strong>Mapping overrides</strong><p class="muted">Confirm ambiguous fields once and reuse mapping profiles for future uploads.</p></div>
+        <div class="feature"><strong>Validation-backed reliability</strong><p class="muted">Release gating includes visual regression, accessibility, cache validation, and soak checks.</p></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Screenshots</h2>
+      <div class="shots">
+        <div class="shot"><strong>Overview</strong><div class="muted">Profile footprint, trust, readiness, and quality in one surface.</div></div>
+        <div class="shot"><strong>Readiness</strong><div class="muted">See what the dataset can safely support before downstream decisions.</div></div>
+        <div class="shot"><strong>Healthcare analytics</strong><div class="muted">Explore encounter-aware intelligence, trend, and cohort workflows.</div></div>
+        <div class="shot"><strong>Insights</strong><div class="muted">Generate action-oriented outputs and governed exports.</div></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Validation &amp; Reliability</h2>
+      <ul>
+        <li>Automated uploaded-dataset validation with browser-first workflows.</li>
+        <li>Visual regression coverage to catch unintended UI drift.</li>
+        <li>Accessibility and UI visibility audits for critical workflow paths.</li>
+        <li>Release validation gate spanning quick checks, full validation, cache integrity, accessibility, and soak testing.</li>
+      </ul>
+    </section>
+
+    <section class="cta">
+      <h2>Try the Platform</h2>
+      <p class="muted">Launch the Streamlit app, try the built-in healthcare demo, or upload your own dataset to begin the readiness workflow.</p>
+      <a class="btn btn-primary" href="./">Launch App</a>
+    </section>
+  </div>
+</body>
+</html>

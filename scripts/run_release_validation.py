@@ -235,7 +235,7 @@ def main() -> int:
     args = parse_args()
     python_executable = args.python_executable or str((ROOT / '.venv' / 'Scripts' / 'python.exe').resolve())
     fixture = get_fixture(args.fixture) if args.fixture else (get_fixture('small-healthcare') if args.ci_mode else get_default_fixture())
-    selected_fixture = str(fixture.path.resolve())
+    selected_fixture = str(fixture.resolve_path(require_exists=not args.ci_mode).resolve())
     release_dir = _ensure_release_dir()
     started_at = _timestamp()
     fixture_key = fixture.key

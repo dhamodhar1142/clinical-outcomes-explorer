@@ -75,7 +75,6 @@ from src.healthcare_analysis import build_cohort_summary, build_readmission_coho
 from src.modules.audit import log_audit_event
 from src.modules.privacy_security import evaluate_export_policy, get_export_policy_presets, run_privacy_security_review
 from src.modules.rbac import can_access
-from src.modeling_studio import build_model_comparison_studio, build_model_fairness_review, build_prediction_explainability, build_predictive_model, default_modeling_selection
 from src.ops_hardening import build_deployment_support_notes
 from src.plan_awareness import build_plan_awareness, is_strict_plan_enforcement, plan_feature_enabled
 from src.product_settings import LARGE_DATASET_PROFILES, build_product_settings_summary
@@ -156,6 +155,8 @@ TAB_LABELS = [
     'Key Insights',
     'Export Center',
 ]
+
+DEFAULT_DEMO_DATASET_NAME = 'Healthcare Operations Demo'
 
 
 def _get_logger_module():
@@ -254,6 +255,90 @@ def _load_cached_dataset_selection():
     return _get_dataset_service_module().build_selection_from_active_bundle(
         st.session_state.get('active_dataset_bundle'),
         storage_service=st.session_state.get('storage_service'),
+    )
+
+
+def _queue_dataset_source_change(source_mode: str, *, demo_dataset_name: str | None = None) -> None:
+    st.session_state['pending_dataset_source_mode'] = source_mode
+    if demo_dataset_name:
+        st.session_state['pending_demo_dataset_name'] = demo_dataset_name
+    st.rerun()
+
+
+def _render_demo_ready_empty_state() -> None:
+    render_app_header(
+        title=APP_TITLE,
+        subtitle=BRAND_SUBTITLE,
+        tagline='Clinical Data Quality & Analytics Platform for Healthcare Datasets',
+        context_items=[
+            ('Mode', 'Awaiting dataset'),
+            ('Demo dataset', DEFAULT_DEMO_DATASET_NAME),
+            ('Workflow', 'Upload or demo start'),
+            ('Readiness', 'Calculated after load'),
+        ],
+    )
+    render_section_intro(
+        'Get started',
+        'Upload a healthcare dataset or launch a guided demo flow to explore readiness, intelligence, and export workflows without leaving the app.',
+    )
+    render_badge_row(
+        [
+            ('Demo-ready', 'accent'),
+            ('Upload-first workflow', 'info'),
+            ('Validation-backed', 'success'),
+        ]
+    )
+    render_surface_panel(
+        'Guided Walkthrough',
+        '1. Upload dataset  2. View overview  3. Check readiness  4. Explore insights  5. Export reports',
+        tone='info',
+    )
+    action_cols = st.columns([1, 1], gap='medium')
+    with action_cols[0]:
+        if st.button('Try Demo Dataset', use_container_width=True, type='primary'):
+            _queue_dataset_source_change('Built-in example dataset', demo_dataset_name=DEFAULT_DEMO_DATASET_NAME)
+    with action_cols[1]:
+        st.button('Use Uploaded Dataset', use_container_width=True, disabled=True, help='Switch the sidebar source selector to Uploaded dataset and add a CSV or Excel file.')
+    render_surface_panel(
+        'No active uploaded dataset',
+        'Use the sidebar to choose Uploaded dataset, then add a CSV or Excel extract. If you want an instant walkthrough, start with the built-in healthcare demo.',
+    )
+    render_workflow_steps(
+        [
+            ('Upload dataset', 'Use the sidebar uploader for a CSV or Excel healthcare extract.'),
+            ('View overview', 'Confirm footprint, structure confidence, and mapped fields.'),
+            ('Check readiness', 'Review blockers, trust, and what the dataset can support right now.'),
+            ('Explore insights', 'Open healthcare intelligence, trends, and cohort views.'),
+            ('Export reports', 'Generate stakeholder-ready outputs once the dataset is ready.'),
+        ]
+    )
+    if DEFAULT_DEMO_DATASET_NAME in DEMO_DATASETS:
+        demo = DEMO_DATASETS[DEFAULT_DEMO_DATASET_NAME]
+        render_surface_panel(
+            'Recommended demo dataset',
+            f"{DEFAULT_DEMO_DATASET_NAME}: {demo.get('description', 'Built-in healthcare demo dataset.')}",
+            tone='accent',
+        )
+
+
+def _render_active_dataset_status(source_meta: dict[str, Any], pipeline: dict[str, Any]) -> None:
+    source_mode = str(source_meta.get('source_mode', 'Unknown'))
+    sampling_mode = str(source_meta.get('sampling_mode', 'full') or 'full')
+    readiness_score = float(pipeline.get('readiness', {}).get('readiness_score', 0.0) or 0.0)
+    quality_score = float(pipeline.get('quality', {}).get('quality_score', 0.0) or 0.0)
+    metric_row([
+        ('Dataset status', 'Uploaded dataset active' if source_mode == 'Uploaded dataset' else 'Demo dataset active'),
+        ('Analysis scope', 'Sampled dataset' if sampling_mode == 'sampled' else 'Full dataset'),
+        ('Readiness score', fmt(readiness_score, 'score')),
+        ('Quality score', fmt(quality_score)),
+    ])
+    render_surface_panel(
+        'Readiness score explanation',
+        (
+            'Readiness combines schema support, detected healthcare semantics, quality signals, and module prerequisites. '
+            'Sampled runs still preserve authoritative source identity and source row counts.'
+        ),
+        tone='info',
     )
 
 
@@ -818,6 +903,7 @@ def main() -> None:
         source_meta['manual_semantic_overrides'] = dict(manual_semantic_overrides)
         source_meta['manual_semantic_override_count'] = len(manual_semantic_overrides)
     if data is None:
+        _render_demo_ready_empty_state()
         return
     render_sidebar_section(st.sidebar, 'Current session')
     render_sidebar_status_panel(
@@ -1144,6 +1230,7 @@ def main() -> None:
             ('Rows in scope', fmt(pipeline['overview']['rows'])),
         ],
     )
+    _render_active_dataset_status(source_meta, pipeline)
     if is_demo_dataset and st.session_state.get('product_demo_mode_enabled', True):
         st.info('Demo mode is active. Use the guided path below to move from intake and remediation through readiness review, clinical intelligence, and stakeholder-ready exports.')
     render_section_intro(

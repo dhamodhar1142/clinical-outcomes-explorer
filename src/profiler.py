@@ -10,10 +10,11 @@ from typing import Any
 
 import pandas as pd
 
+from src.runtime_paths import data_path
 from src.schema_detection import StructureSummary, detect_structure
 
 
-PROFILE_CACHE_ROOT = Path('data') / 'cache' / 'profiles'
+PROFILE_CACHE_ROOT = data_path('cache', 'profiles')
 PROFILE_CACHE_VERSION = 'v3'
 
 

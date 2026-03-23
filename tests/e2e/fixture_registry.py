@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_DATASET_DIR = ROOT / 'tests' / 'fixtures' / 'datasets'
+LOCAL_DATASET_DIR = ROOT / 'data' / 'local_fixtures'
+LARGE_FIXTURE_ENV_VAR = 'SMART_DATASET_ANALYZER_LARGE_FIXTURE_PATH'
 
 
 @dataclass(frozen=True)
@@ -21,6 +24,36 @@ class DatasetFixture:
     expected_approximate_row_count: int
     large_file: bool = False
     notes: str = ''
+
+    def candidate_paths(self) -> tuple[Path, ...]:
+        env_override = os.getenv(LARGE_FIXTURE_ENV_VAR, '').strip()
+        candidates: list[Path] = [self.path]
+        if self.large_file and env_override:
+            candidates.insert(0, Path(env_override).expanduser())
+        if self.large_file:
+            candidates.append(LOCAL_DATASET_DIR / self.dataset_name)
+        seen: set[str] = set()
+        deduped: list[Path] = []
+        for candidate in candidates:
+            key = str(candidate)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(candidate)
+        return tuple(deduped)
+
+    def resolve_path(self, require_exists: bool = True) -> Path:
+        for candidate in self.candidate_paths():
+            if candidate.exists():
+                return candidate
+        if not require_exists:
+            return self.candidate_paths()[0]
+        candidate_list = ', '.join(str(path) for path in self.candidate_paths())
+        raise FileNotFoundError(
+            f'Fixture {self.dataset_name} is not available locally. '
+            f'Place it at one of: {candidate_list}. '
+            f'You can also set {LARGE_FIXTURE_ENV_VAR} to a local copy.'
+        )
 
 
 PRIMARY_FULL_VALIDATION_FIXTURE = DatasetFixture(
