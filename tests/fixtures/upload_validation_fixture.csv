@@ -1,0 +1,4 @@
+patient_id,admission_date,discharge_date,primary_diagnosis_label,secondary_diagnosis_label,bmi,allowed_amount,readmission_30d
+P-1001,2024-01-03,2024-01-05,Heart failure,,31.4,18450.25,1
+P-1002,2024-01-06,2024-01-08,Pneumonia,Hypertension,27.1,9230.00,0
+P-1003,2024-01-10,2024-01-12,Diabetes,,35.8,11790.10,1

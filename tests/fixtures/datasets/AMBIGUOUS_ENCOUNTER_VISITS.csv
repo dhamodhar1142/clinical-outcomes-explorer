@@ -1,0 +1,4 @@
+member_key,visit_start_raw,visit_end_raw,visit_type_label,visit_status_label,room_code
+M-001,2024-01-01,2024-01-02,Observation,Discharged,RM-01
+M-002,2024-01-05,2024-01-06,Inpatient,Completed,RM-02
+M-003,2024-01-08,2024-01-09,Emergency,Transferred,RM-03

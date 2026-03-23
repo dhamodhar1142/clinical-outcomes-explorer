@@ -121,6 +121,57 @@ class DatasetIntelligenceTests(unittest.TestCase):
         self.assertTrue(report["synthetic_support_summary"])
         self.assertTrue(report["support_disclosure_note"])
 
+    def test_partial_support_explanations_include_missing_and_unlock_guidance(self) -> None:
+        data = pd.DataFrame(
+            {
+                "patient_id": ["P1", "P2", "P3", "P4"],
+                "admission_date": pd.date_range("2024-01-01", periods=4, freq="D"),
+                "age": [66, 71, 58, 63],
+                "department": ["Oncology", "Medicine", "Oncology", "Medicine"],
+            }
+        )
+        structure = detect_structure(data)
+        semantic = infer_semantic_mapping(data, structure)
+        readiness = evaluate_analysis_readiness(semantic["canonical_map"])
+        healthcare = {
+            "healthcare_readiness_score": 0.48,
+            "likely_dataset_type": "Healthcare-related dataset",
+            "risk_segmentation": {"available": False, "reason": "Need stronger clinical severity support."},
+            "default_cohort_summary": {"available": True},
+            "readmission": {
+                "available": True,
+                "source": "synthetic",
+                "readiness": {
+                    "missing_fields": ["readmission_flag", "diagnosis", "length_of_stay"],
+                    "additional_fields_to_unlock_full_analysis": ["readmission_flag", "diagnosis", "length_of_stay", "discharge_date"],
+                },
+            },
+            "cost": {"available": False, "reason": "No native cost field."},
+            "diagnosis": {"available": False, "reason": "No diagnosis-like fields are available."},
+            "provider": {"available": False, "reason": "No provider-like fields are available."},
+            "care_pathway": {"available": False, "reason": "Need treatment and outcome timing."},
+        }
+        remediation = build_data_remediation_assistant(structure, semantic, readiness)
+        remediation_context = {"synthetic_readmission": {"available": True}}
+        report = build_dataset_intelligence_report(
+            data,
+            structure,
+            semantic,
+            readiness,
+            healthcare,
+            _quality_stub(75.0),
+            remediation,
+            remediation_context,
+            {},
+            {},
+            _governance_stub(),
+        )
+        partial = report["partial_support_explanations"]
+        self.assertFalse(partial.empty)
+        self.assertIn("what_still_works", partial.columns)
+        self.assertIn("what_is_missing", partial.columns)
+        self.assertIn("fields_to_unlock_full_support", partial.columns)
+
     def test_recommendations_prioritize_high_impact_fields(self) -> None:
         data = pd.DataFrame(
             {
@@ -160,6 +211,48 @@ class DatasetIntelligenceTests(unittest.TestCase):
         self.assertFalse(upgrades.empty)
         self.assertIn("recommended_field", upgrades.columns)
         self.assertIn("analytics_unlocked", upgrades.columns)
+
+    def test_synthetic_helpers_do_not_overclassify_generic_dataset(self) -> None:
+        data = pd.DataFrame(
+            {
+                "order_id": ["O1", "O2", "O3"],
+                "year": [2020, 2021, 2022],
+                "revenue": [100.0, 110.0, 120.0],
+            }
+        )
+        structure = detect_structure(data)
+        semantic = {
+            "canonical_map": {
+                "cost_amount": "cost_amount",
+                "event_date": "order_date",
+                "provider_id": "order_id",
+            },
+            "semantic_confidence_score": 0.58,
+        }
+        readiness = {"readiness_score": 0.74, "readiness_table": pd.DataFrame()}
+        healthcare = {"healthcare_readiness_score": 0.40}
+        remediation_context = {
+            "helper_fields": pd.DataFrame(
+                [
+                    {"helper_field": "cost_amount", "helper_type": "synthetic"},
+                    {"helper_field": "event_date", "helper_type": "synthetic"},
+                ]
+            )
+        }
+        report = build_dataset_intelligence_report(
+            data,
+            structure,
+            semantic,
+            readiness,
+            healthcare,
+            _quality_stub(82.0),
+            pd.DataFrame(),
+            remediation_context,
+            {"cdisc_report": {"available": False, "readiness_score": 0.0}},
+            {},
+            _governance_stub(),
+        )
+        self.assertEqual(report["dataset_type_label"], "Generic tabular dataset")
 
 
 if __name__ == "__main__":

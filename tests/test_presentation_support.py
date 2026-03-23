@@ -7,6 +7,7 @@ import pandas as pd
 from src.presentation_support import (
     build_audit_summary,
     build_compliance_governance_summary,
+    build_demo_dataset_cards,
     build_executive_report_pack,
     build_landing_summary,
     build_printable_reports,
@@ -138,10 +139,93 @@ class PresentationSupportTests(unittest.TestCase):
             'healthcare': healthcare,
             'standards': {'badge_text': 'Moderate'},
             'remediation_context': remediation,
+            'source_meta': {'source_mode': 'Demo dataset'},
         }
         landing = build_landing_summary(pipeline, demo_config, 'demo.csv')
         self.assertIn('headline', landing)
         self.assertTrue(landing['capability_badges'])
+        self.assertTrue(landing['product_value_cards'])
+        self.assertFalse(landing['differentiators'].empty)
+        self.assertTrue(landing['who_its_for'])
+        self.assertEqual(landing['headline'], 'Clinverity')
+        self.assertIn('Clinical Data Quality, Remediation & Audit Platform', landing['subheadline'])
+        self.assertIn('audience_summary', landing)
+        self.assertIn('consulting teams', landing['audience_summary'])
+        self.assertIn('four_step_workflow', landing)
+        self.assertEqual(len(landing['four_step_workflow']), 4)
+        self.assertEqual(landing['four_step_workflow'][0]['step'], '1. Upload')
+        self.assertTrue(landing['recommended_starting_paths'])
+        self.assertIn('positioning_statement', landing)
+        self.assertIn('consulting teams', landing['positioning_statement'])
+        self.assertIn('investor_demo_narrative', landing)
+        self.assertTrue(landing['investor_demo_narrative']['workflow'])
+        self.assertIn('design_partner_mode', landing)
+        self.assertTrue(landing['design_partner_mode']['capabilities_now'])
+        self.assertIn('roi_value_estimation', landing)
+        self.assertTrue(landing['roi_value_estimation']['cards'])
+        self.assertIn('pilot_readiness_toolkit', landing)
+        self.assertTrue(landing['pilot_readiness_toolkit']['prepare_data'])
+        self.assertTrue(landing['pilot_readiness_toolkit']['evaluate_success'])
+        self.assertIn('architecture_signals', landing)
+        self.assertTrue(landing['architecture_signals']['workflow_layers'])
+        self.assertTrue(landing['architecture_signals']['future_integration_slots'])
+        self.assertIn('startup_pitch_polish', landing)
+        self.assertTrue(landing['startup_pitch_polish']['premium_copy'])
+        self.assertTrue(landing['startup_pitch_polish']['use_case_positioning'])
+        self.assertIn('startup_demo_flow', landing)
+        self.assertEqual(landing['startup_demo_flow']['best_dataset'], 'Healthcare Operations Demo')
+        self.assertEqual(len(landing['startup_demo_flow']['recommended_tabs']), 4)
+        self.assertTrue(landing['startup_demo_flow']['quick_start_steps'])
+        self.assertEqual(landing['startup_demo_flow']['estimated_demo_time'], '5-7 minutes')
+        self.assertTrue(landing['startup_demo_flow']['suggested_copilot_prompts'])
+        self.assertEqual(landing['startup_demo_flow']['recommended_export'], 'Analyst Report')
+        self.assertIn('demo_outcome', landing['startup_demo_flow'])
+        self.assertTrue(landing['onboarding_cues'])
+        self.assertTrue(landing['workspace_handoff_cues'])
+        self.assertTrue(landing['report_polish_cues'])
+
+    def test_landing_differentiators_adapt_for_generic_business_context(self):
+        overview, quality, readiness, healthcare, dataset_intelligence, executive_summary, action_recs, intervention_recs, kpi, scenarios, prioritized, remediation, demo_config = self._sample_pipeline_bits()
+        pipeline = {
+            'readiness': readiness,
+            'healthcare': {**healthcare, 'healthcare_readiness_score': 0.15},
+            'standards': {'badge_text': 'Moderate'},
+            'remediation_context': {**remediation, 'synthetic_field_count': 0},
+            'dataset_intelligence': {**dataset_intelligence, 'dataset_type_label': 'Generic tabular dataset'},
+            'use_case_detection': {'recommended_workflow': 'Business Data Readiness'},
+        }
+
+        landing = build_landing_summary(pipeline, demo_config, 'generic-demo.csv')
+
+        self.assertFalse(landing['differentiators'].empty)
+        summaries = landing['differentiators']['summary'].astype(str).tolist()
+        why_it_matters = ' '.join(landing['differentiators']['why_it_matters'].astype(str).tolist())
+        self.assertTrue(any('Business Dataset Advantage' == title for title in landing['differentiators']['title'].astype(str).tolist()))
+        self.assertTrue(any('Business Data Readiness' in summary for summary in summaries))
+        self.assertIn('business', why_it_matters.lower())
+
+    def test_landing_summary_hides_demo_flow_for_uploaded_dataset_context(self):
+        overview, quality, readiness, healthcare, dataset_intelligence, executive_summary, action_recs, intervention_recs, kpi, scenarios, prioritized, remediation, demo_config = self._sample_pipeline_bits()
+        pipeline = {
+            'readiness': readiness,
+            'healthcare': healthcare,
+            'standards': {'badge_text': 'Moderate'},
+            'remediation_context': remediation,
+            'dataset_intelligence': dataset_intelligence,
+            'use_case_detection': {'recommended_workflow': 'Clinical Data Readiness'},
+            'source_meta': {'source_mode': 'Uploaded dataset'},
+        }
+
+        landing = build_landing_summary(pipeline, demo_config, 'uploaded.csv')
+
+        self.assertEqual(landing['startup_demo_flow'], {})
+        self.assertIn('current session context', landing['four_step_workflow'][0]['summary'])
+
+    def test_demo_dataset_cards_are_available(self):
+        cards = build_demo_dataset_cards()
+        self.assertFalse(cards.empty)
+        self.assertIn('dataset_name', cards.columns.tolist())
+        self.assertIn('Healthcare Operations Demo', cards['dataset_name'].tolist())
 
 
 if __name__ == '__main__':
