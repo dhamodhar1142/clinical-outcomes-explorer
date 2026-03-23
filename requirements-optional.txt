@@ -1,2 +1,26 @@
+# Optional integrations and demo tooling.
+# Install these only when you need the related capability.
+
+# Optional model comparison support in the predictive modeling studio.
 xgboost
+
+# Optional OpenAI-backed Copilot polish when OPENAI_API_KEY is configured.
 openai
+
+# Optional PostgreSQL-backed persistence.
+psycopg[binary]
+
+# Optional external worker backend.
+rq
+redis
+
+# Optional S3-compatible object storage backend.
+boto3
+
+# Optional screenshot/demo asset generation tooling.
+playwright
+
+# Optional REST API surface for third-party integrations.
+fastapi
+uvicorn
+python-multipart

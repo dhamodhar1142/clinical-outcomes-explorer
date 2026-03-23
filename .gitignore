@@ -3,3 +3,10 @@ __pycache__/
 *.pyc
 .streamlit/
 clinical-outcomes-explorer/
+.coverage
+.pytest_cache/
+artifacts/
+data/cache/
+data/error_logs/
+data/logs/
+data/storage/

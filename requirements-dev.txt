@@ -1,0 +1,8 @@
+# Full local development and test environment.
+# This keeps the production runtime lean while making optional features
+# available for local demos, exploratory testing, and asset generation.
+-r requirements.txt
+-r requirements-optional.txt
+coverage
+httpx
+playwright

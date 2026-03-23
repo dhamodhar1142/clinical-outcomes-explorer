@@ -1,0 +1,77 @@
+name: CI Manual Release Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      fixture:
+        description: Fixture key to use for CI release validation
+        required: false
+        default: small-healthcare
+        type: choice
+        options:
+          - small-healthcare
+          - default
+      skip_visual:
+        description: Skip visual regression
+        required: false
+        default: false
+        type: boolean
+      skip_soak:
+        description: Skip soak test
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  manual-release-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system packages for browser validation
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm1
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Install Playwright browser
+        run: python -m playwright install chromium
+
+      - name: Run CI-friendly release validation
+        env:
+          PYTHONUTF8: '1'
+          FIXTURE: ${{ inputs.fixture }}
+          SKIP_VISUAL: ${{ inputs.skip_visual }}
+          SKIP_SOAK: ${{ inputs.skip_soak }}
+        run: |
+          CMD="python -u scripts/run_release_validation.py --ci-mode --fixture ${FIXTURE}"
+          if [ "${SKIP_VISUAL}" = "true" ]; then
+            CMD="${CMD} --skip-visual"
+          fi
+          if [ "${SKIP_SOAK}" = "true" ]; then
+            CMD="${CMD} --skip-soak"
+          fi
+          echo "Running: ${CMD}"
+          eval "${CMD}"
+
+      - name: Upload release validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-manual-release-validation-artifacts
+          path: |
+            artifacts/validation
+          if-no-files-found: warn

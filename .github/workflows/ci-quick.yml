@@ -1,0 +1,61 @@
+name: CI Quick
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - 'codex/**'
+  pull_request:
+
+jobs:
+  quick-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system packages for browser validation
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm1
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Install Playwright browser
+        run: python -m playwright install chromium
+
+      - name: Compile checks
+        run: python -m compileall app.py src tests scripts
+
+      - name: Targeted validation/unit tests
+        run: |
+          python -m unittest tests.test_validation_automation tests.test_dataset_context_integrity tests.test_pipeline_foundation -v
+
+      - name: Import sanity
+        run: python -c "import app; print('app import ok')"
+
+      - name: CI-friendly quick uploaded-dataset validation
+        env:
+          PYTHONUTF8: '1'
+        run: python -u scripts/run_dataset_validation.py --mode quick --fixture small-healthcare
+
+      - name: Upload validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-quick-validation-artifacts
+          path: |
+            artifacts/validation
+          if-no-files-found: warn

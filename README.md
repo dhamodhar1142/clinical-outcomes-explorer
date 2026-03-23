@@ -135,13 +135,13 @@ Recommended walkthrough:
 
 1. Start in `Data Intake`
    - review guided demo mode, onboarding, lineage, and production hardening
-2. Open `Dataset Profile · Overview`
+2. Open `Dataset Profile - Overview`
    - review readiness, governance summary, and executive snapshot
-3. Open `Data Quality · Analysis Readiness`
+3. Open `Data Quality - Analysis Readiness`
    - review blockers, remediation, standards, privacy, and quick actions
-4. Open `Healthcare Analytics · Healthcare Intelligence`
+4. Open `Healthcare Analytics - Healthcare Intelligence`
    - review risk, readmission, pathway, cohort, and modeling outputs
-5. Finish in `Insights & Export · Export Center`
+5. Finish in `Insights & Export - Export Center`
    - generate executive, governance, compliance, and stakeholder outputs
 
 ## How to run locally
@@ -158,17 +158,35 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
+Optional integrations:
+
+```bash
+pip install -r requirements-optional.txt
+```
+
+This is only needed when you want one or more optional capabilities:
+
+- `openai` for enhanced Copilot responses when `OPENAI_API_KEY` is configured
+- `xgboost` for optional model-comparison support in the predictive modeling studio
+- `playwright` for browser smoke tests and demo-asset tooling
+
+Full local development and validation environment:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
 Launch:
 
 ```bash
 streamlit run app.py
 ```
 
-## Optional dependencies
+## Dependency tiers
 
-The core runtime uses `requirements.txt`.
+Base production/runtime dependencies live in `requirements.txt`.
 
-Optional packages are listed in `requirements-optional.txt`:
+Optional integrations are listed in `requirements-optional.txt`:
 
 - `xgboost`
   - enables optional model comparison support when available
@@ -177,7 +195,11 @@ Optional packages are listed in `requirements-optional.txt`:
 - `playwright`
   - enables automated screenshot generation for demo assets
 
-The app degrades safely when optional packages are not installed.
+Development and broader local validation installs are grouped in `requirements-dev.txt`.
+
+The app degrades safely when optional packages are not installed, and the startup readiness checks surface optional package and config status directly in the UI.
+
+For container builds, the included `Dockerfile` installs only `requirements.txt` by default. Set `INSTALL_OPTIONAL_DEPS=true` at build time if you intentionally want the optional integrations in that image.
 
 ## Deployment notes
 
@@ -191,6 +213,8 @@ Important deployment notes:
 
 - `app.py` is the entrypoint
 - built-in demo data lives under `data/`
+- use `SMART_DATASET_ANALYZER_ENV` to distinguish local, staging, and production expectations
+- use `SMART_DATASET_ANALYZER_SECRETS_SOURCE` to document whether secrets come from environment variables or a secret manager
 - the app uses safe fallbacks when optional packages are absent
 - large datasets are handled with staged sampling and diagnostics
 - Docker support files are included:
@@ -198,6 +222,17 @@ Important deployment notes:
 - `.dockerignore`
 
 See `docs/deployment.md` for a concise deployment checklist.
+
+## CI and release safety
+
+The repository now includes a GitHub Actions workflow that runs:
+
+- compile validation
+- unit tests
+- import sanity
+- browser smoke coverage
+
+This keeps release candidates and pilot/demo builds gated on the same core checks used in local validation.
 
 ## Demo dataset guidance
 
