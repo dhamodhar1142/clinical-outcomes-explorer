@@ -135,13 +135,13 @@ Recommended walkthrough:
 
 1. Start in `Data Intake`
    - review guided demo mode, onboarding, lineage, and production hardening
-2. Open `Dataset Profile · Overview`
+2. Open `Dataset Profile - Overview`
    - review readiness, governance summary, and executive snapshot
-3. Open `Data Quality · Analysis Readiness`
+3. Open `Data Quality - Analysis Readiness`
    - review blockers, remediation, standards, privacy, and quick actions
-4. Open `Healthcare Analytics · Healthcare Intelligence`
+4. Open `Healthcare Analytics - Healthcare Intelligence`
    - review risk, readmission, pathway, cohort, and modeling outputs
-5. Finish in `Insights & Export · Export Center`
+5. Finish in `Insights & Export - Export Center`
    - generate executive, governance, compliance, and stakeholder outputs
 
 ## How to run locally
@@ -158,17 +158,35 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
+Optional integrations:
+
+```bash
+pip install -r requirements-optional.txt
+```
+
+This is only needed when you want one or more optional capabilities:
+
+- `openai` for enhanced Copilot responses when `OPENAI_API_KEY` is configured
+- `xgboost` for optional model-comparison support in the predictive modeling studio
+- `playwright` for browser smoke tests and demo-asset tooling
+
+Full local development and validation environment:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
 Launch:
 
 ```bash
 streamlit run app.py
 ```
 
-## Optional dependencies
+## Dependency tiers
 
-The core runtime uses `requirements.txt`.
+Base production/runtime dependencies live in `requirements.txt`.
 
-Optional packages are listed in `requirements-optional.txt`:
+Optional integrations are listed in `requirements-optional.txt`:
 
 - `xgboost`
   - enables optional model comparison support when available
@@ -177,7 +195,11 @@ Optional packages are listed in `requirements-optional.txt`:
 - `playwright`
   - enables automated screenshot generation for demo assets
 
-The app degrades safely when optional packages are not installed.
+Development and broader local validation installs are grouped in `requirements-dev.txt`.
+
+The app degrades safely when optional packages are not installed, and the startup readiness checks surface optional package and config status directly in the UI.
+
+For container builds, the included `Dockerfile` installs only `requirements.txt` by default. Set `INSTALL_OPTIONAL_DEPS=true` at build time if you intentionally want the optional integrations in that image.
 
 ## Deployment notes
 
@@ -191,6 +213,8 @@ Important deployment notes:
 
 - `app.py` is the entrypoint
 - built-in demo data lives under `data/`
+- use `SMART_DATASET_ANALYZER_ENV` to distinguish local, staging, and production expectations
+- use `SMART_DATASET_ANALYZER_SECRETS_SOURCE` to document whether secrets come from environment variables or a secret manager
 - the app uses safe fallbacks when optional packages are absent
 - large datasets are handled with staged sampling and diagnostics
 - Docker support files are included:
@@ -198,6 +222,73 @@ Important deployment notes:
 - `.dockerignore`
 
 See `docs/deployment.md` for a concise deployment checklist.
+
+The repository also includes a static product layer in `landing_page.html` for demo, launch, or marketing-oriented presentation alongside the app.
+
+## First-run product experience
+
+The app now supports a more demo-ready first run:
+
+- a `Try Demo Dataset` action when no uploaded dataset is active
+- a guided walkthrough path:
+  - upload dataset
+  - view overview
+  - check readiness
+  - explore insights
+  - export reports
+- explicit runtime status indicators for:
+  - uploaded vs demo dataset activity
+  - sampled vs full analysis mode
+  - readiness score interpretation
+
+## CI and release safety
+
+The repository now includes a GitHub Actions workflow that runs:
+
+- compile validation
+- unit tests
+- import sanity
+- browser smoke coverage
+
+This keeps release candidates and pilot/demo builds gated on the same core checks used in local validation.
+
+## Validation fixture strategy
+
+The repository uses two validation fixture tiers:
+
+- CI-friendly fixtures that stay in git:
+  - `tests/fixtures/datasets/SMALL_HEALTHCARE_VISITS.csv`
+  - `tests/fixtures/datasets/ALT_EHP__VIST.csv`
+  - smaller malformed and ambiguous fixtures used by automated checks
+- local/manual large fixture:
+  - `tests/fixtures/datasets/STG_EHP__VIST.csv`
+
+Recommended usage:
+
+- quick validation and CI:
+  - use `small-healthcare`
+- local full validation and local release validation:
+  - use `default` / `STG_EHP__VIST.csv`
+
+The large full-workflow fixture is intended to be local/manual and may not be present in a fresh public clone. To restore full local validation, place the file at either:
+
+```text
+tests/fixtures/datasets/STG_EHP__VIST.csv
+```
+
+or:
+
+```text
+data/local_fixtures/STG_EHP__VIST.csv
+```
+
+or set:
+
+```powershell
+$env:SMART_DATASET_ANALYZER_LARGE_FIXTURE_PATH="C:\path\to\STG_EHP__VIST.csv"
+```
+
+See [docs/validation_automation.md](C:\Users\dhamo\OneDrive\Desktop\clinical-outcomes-explorer\docs\validation_automation.md) for the full command map and fixture behavior.
 
 ## Demo dataset guidance
 

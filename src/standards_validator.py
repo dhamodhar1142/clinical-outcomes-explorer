@@ -67,6 +67,33 @@ STANDARDS_OVERRIDE_FIELDS = {
     },
 }
 
+STANDARD_PROFILE_CONFIG = {
+    'CDISC SDTM-style dataset': {
+        'display_name': 'CDISC SDTM-style dataset',
+        'required_raw': ['STUDYID', 'USUBJID', 'SUBJID', 'DOMAIN', 'VISIT', 'VISITNUM'],
+        'required_canonical': ['patient_id', 'service_date'],
+        'mapping_group': 'CDISC',
+    },
+    'CDISC ADaM-style dataset': {
+        'display_name': 'CDISC ADaM-style dataset',
+        'required_raw': ['STUDYID', 'USUBJID', 'PARAM', 'PARAMCD', 'AVAL'],
+        'required_canonical': ['patient_id', 'survived'],
+        'mapping_group': 'CDISC',
+    },
+    'FHIR-like structure': {
+        'display_name': 'FHIR-like structure',
+        'required_raw': ['resourceType', 'id', 'subject', 'code', 'status'],
+        'required_canonical': ['patient_id', 'diagnosis_code', 'service_date'],
+        'mapping_group': 'Interoperability',
+    },
+    'HL7-like pattern': {
+        'display_name': 'HL7-like pattern',
+        'required_raw': ['MSH', 'PID', 'PV1'],
+        'required_canonical': ['patient_id', 'admission_date'],
+        'mapping_group': 'Interoperability',
+    },
+}
+
 
 def _normalize_column_name(name: str) -> str:
     return ''.join(char.lower() for char in str(name) if char.isalnum())
@@ -156,27 +183,173 @@ def _base_standards_summary(data: pd.DataFrame, semantic: dict[str, object]) -> 
     return pd.DataFrame(results).sort_values('compliance_confidence', ascending=False).reset_index(drop=True)
 
 
+def _profile_confidence(
+    profile_name: str,
+    cdisc_report: dict[str, object],
+    interoperability_report: dict[str, object],
+    heuristic_summary: pd.DataFrame,
+) -> float:
+    if profile_name == 'CDISC SDTM-style dataset':
+        return float(cdisc_report.get('sdtm_detection', {}).get('confidence_score', 0.0))
+    if profile_name == 'CDISC ADaM-style dataset':
+        return float(cdisc_report.get('adam_detection', {}).get('confidence_score', 0.0))
+    if profile_name == 'FHIR-like structure':
+        fhir = interoperability_report.get('fhir_resources', pd.DataFrame())
+        if isinstance(fhir, pd.DataFrame) and not fhir.empty and 'confidence_score' in fhir.columns:
+            return float(fhir['confidence_score'].max())
+        matched = heuristic_summary.loc[heuristic_summary['standard'] == 'FHIR-style Resources', 'compliance_confidence']
+        return float(matched.iloc[0]) if not matched.empty else 0.0
+    if profile_name == 'HL7-like pattern':
+        hl7 = interoperability_report.get('hl7_patterns', pd.DataFrame())
+        if isinstance(hl7, pd.DataFrame) and not hl7.empty and 'confidence_score' in hl7.columns:
+            return float(hl7['confidence_score'].max())
+        matched = heuristic_summary.loc[heuristic_summary['standard'] == 'HL7-style Messages', 'compliance_confidence']
+        return float(matched.iloc[0]) if not matched.empty else 0.0
+    return 0.0
+
+
+def _profile_readiness_score(
+    profile_name: str,
+    cdisc_report: dict[str, object],
+    interoperability_report: dict[str, object],
+) -> float:
+    if profile_name.startswith('CDISC'):
+        return float(cdisc_report.get('readiness_score', 0.0))
+    return float(interoperability_report.get('readiness_score', 0.0))
+
+
+def _mapping_matches_for_group(standards_validation_rows: pd.DataFrame, mapping_group: str) -> pd.DataFrame:
+    if not isinstance(standards_validation_rows, pd.DataFrame) or standards_validation_rows.empty:
+        return pd.DataFrame()
+    if mapping_group == 'CDISC' and 'cdisc_field' in standards_validation_rows.columns:
+        return standards_validation_rows
+    if mapping_group == 'Interoperability' and 'reference_model_target' in standards_validation_rows.columns:
+        return standards_validation_rows
+    return pd.DataFrame()
+
+
+def _build_standard_profiles(
+    data: pd.DataFrame,
+    semantic: dict[str, object],
+    heuristic_summary: pd.DataFrame,
+    cdisc_report: dict[str, object],
+    interoperability_report: dict[str, object],
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    raw_columns = [str(column) for column in data.columns]
+    canonical_map = semantic.get('canonical_map', {})
+    cdisc_mappings = _mapping_matches_for_group(cdisc_report.get('mapping_suggestions', pd.DataFrame()), 'CDISC')
+    interop_mappings = _mapping_matches_for_group(interoperability_report.get('mapping_suggestions', pd.DataFrame()), 'Interoperability')
+    profile_rows: list[dict[str, object]] = []
+    requirement_rows: list[dict[str, object]] = []
+    mapping_rows: list[dict[str, object]] = []
+
+    for profile_name, config in STANDARD_PROFILE_CONFIG.items():
+        required_raw = config['required_raw']
+        required_canonical = config['required_canonical']
+        matched_raw, missing_raw = _match_raw_fields(raw_columns, required_raw)
+        matched_canonical, missing_canonical = _match_canonical_fields(canonical_map, required_canonical)
+        confidence = _profile_confidence(profile_name, cdisc_report, interoperability_report, heuristic_summary)
+        readiness_score = _profile_readiness_score(profile_name, cdisc_report, interoperability_report)
+        total_required = len(required_raw) + len(required_canonical)
+        matched_required = len(matched_raw) + len(matched_canonical)
+        mapping_group = config['mapping_group']
+        mapping_frame = cdisc_mappings if mapping_group == 'CDISC' else interop_mappings
+        profile_rows.append({
+            'standard_type': profile_name,
+            'confidence_score': round(confidence, 2),
+            'confidence_label': 'High' if confidence >= 0.75 else 'Medium' if confidence >= 0.45 else 'Low',
+            'standards_readiness_score': round(readiness_score, 1),
+            'required_fields_present': matched_required,
+            'required_fields_total': total_required,
+            'missing_required_fields': len(missing_raw) + len(missing_canonical),
+            'suggested_mappings': len(mapping_frame) if isinstance(mapping_frame, pd.DataFrame) else 0,
+            'status': 'Detected' if confidence >= 0.35 else 'Possible' if confidence >= 0.20 else 'Not enough signal yet',
+        })
+        for field in required_raw:
+            requirement_rows.append({
+                'standard_type': profile_name,
+                'field_name': field,
+                'field_role': 'Raw standard field',
+                'status': 'Present' if field in matched_raw else 'Missing',
+                'closest_existing_columns': '' if field in matched_raw else _closest_columns(raw_columns, [field]),
+                'suggested_mapping': '' if field in matched_raw else f'Add or rename a source field to strengthen {profile_name}.',
+            })
+        for field in required_canonical:
+            requirement_rows.append({
+                'standard_type': profile_name,
+                'field_name': field,
+                'field_role': 'Canonical healthcare role',
+                'status': 'Present' if field in matched_canonical else 'Missing',
+                'closest_existing_columns': '' if field in matched_canonical else _closest_columns(raw_columns, [field]),
+                'suggested_mapping': '' if field in matched_canonical else f'Map or derive {field.replace("_", " ")} to strengthen {profile_name}.',
+            })
+        if isinstance(mapping_frame, pd.DataFrame) and not mapping_frame.empty:
+            if mapping_group == 'CDISC':
+                for _, row in mapping_frame.iterrows():
+                    mapping_rows.append({
+                        'standard_type': profile_name,
+                        'target_field': row.get('cdisc_field', ''),
+                        'suggested_source_column': row.get('suggested_source_column', ''),
+                        'confidence_score': row.get('confidence_score', None),
+                        'mapping_reason': row.get('reason', 'Rule-based CDISC name similarity'),
+                    })
+            else:
+                for _, row in mapping_frame.iterrows():
+                    mapping_rows.append({
+                        'standard_type': profile_name,
+                        'target_field': row.get('reference_model_target', ''),
+                        'suggested_source_column': row.get('suggested_source_column', ''),
+                        'confidence_score': row.get('confidence_score', None),
+                        'mapping_reason': f"Mapped from {row.get('local_field_signal', 'field signal')}",
+                    })
+
+    profiles = pd.DataFrame(profile_rows).sort_values(['confidence_score', 'standards_readiness_score'], ascending=False).reset_index(drop=True)
+    requirements = pd.DataFrame(requirement_rows)
+    mappings = pd.DataFrame(mapping_rows)
+    return profiles, requirements, mappings
+
+
 
 def validate_healthcare_standards(data: pd.DataFrame, structure: StructureSummary, semantic: dict[str, object]) -> dict[str, object]:
     raw_columns = [str(column) for column in data.columns]
     summary_table = _base_standards_summary(data, semantic)
     cdisc_report = generate_cdisc_report(data)
     interoperability_report = generate_interoperability_report(data)
+    cdisc_report = {
+        **cdisc_report,
+        'sdtm_detection': cdisc_report.get('sdtm_detection', {}),
+        'adam_detection': cdisc_report.get('adam_detection', {}),
+    }
+    standards_profiles, required_field_review, standards_mappings = _build_standard_profiles(
+        data,
+        semantic,
+        summary_table,
+        cdisc_report,
+        interoperability_report,
+    )
 
-    top_standard = summary_table.iloc[0] if not summary_table.empty else None
-    top_standard_name = str(top_standard['standard']) if top_standard is not None else 'No dominant standard detected'
-    top_standard_confidence = float(top_standard['compliance_confidence']) if top_standard is not None else 0.0
+    top_standard = standards_profiles.iloc[0] if not standards_profiles.empty else None
+    top_standard_name = str(top_standard['standard_type']) if top_standard is not None else 'No dominant standard detected'
+    top_standard_confidence = float(top_standard['confidence_score']) if top_standard is not None else 0.0
     top_standard_label = str(top_standard['confidence_label']) if top_standard is not None else 'Low'
     missing_required = int(top_standard['missing_required_fields']) if top_standard is not None else 0
 
     recommendations = pd.DataFrame()
     if top_standard is not None and top_standard_confidence >= 0.20:
-        recommendations = _recommendation_for_standard(
-            top_standard_name,
-            list(top_standard['missing_raw_fields']),
-            list(top_standard['missing_canonical_fields']),
-            raw_columns,
-        )
+        top_requirements = required_field_review[
+            (required_field_review['standard_type'] == top_standard_name)
+            & (required_field_review['status'] == 'Missing')
+        ] if not required_field_review.empty else pd.DataFrame()
+        recommendation_rows: list[dict[str, object]] = []
+        if not top_requirements.empty:
+            for _, row in top_requirements.iterrows():
+                recommendation_rows.append({
+                    'missing_field': row.get('field_name', ''),
+                    'field_type': row.get('field_role', ''),
+                    'closest_existing_columns': row.get('closest_existing_columns', ''),
+                    'recommended_mapping': row.get('suggested_mapping', ''),
+                })
+        recommendations = pd.DataFrame(recommendation_rows)
 
     combined_readiness = round(max(
         top_standard_confidence * 100,
@@ -190,6 +363,9 @@ def validate_healthcare_standards(data: pd.DataFrame, structure: StructureSummar
             'available': False,
             'reason': 'The dataset does not currently resemble a supported healthcare exchange, trial, or interoperability structure strongly enough for a useful standards review.',
             'summary_table': summary_table[['standard', 'confidence_label', 'compliance_confidence', 'matched_required_fields', 'missing_required_fields', 'matched_optional_fields', 'description']] if not summary_table.empty else pd.DataFrame(),
+            'standards_profiles': standards_profiles,
+            'required_field_review': required_field_review,
+            'mapping_suggestions': standards_mappings,
             'recommendations': pd.DataFrame(),
             'cdisc_report': cdisc_report,
             'interoperability_report': interoperability_report,
@@ -208,6 +384,9 @@ def validate_healthcare_standards(data: pd.DataFrame, structure: StructureSummar
         'compliance_confidence': top_standard_confidence,
         'confidence_label': top_standard_label,
         'missing_required_fields': missing_required,
+        'standards_profiles': standards_profiles,
+        'required_field_review': required_field_review,
+        'mapping_suggestions': standards_mappings,
         'summary_table': summary_table[['standard', 'confidence_label', 'compliance_confidence', 'matched_required_fields', 'missing_required_fields', 'matched_optional_fields', 'description']],
         'recommendations': recommendations,
         'combined_readiness_score': combined_readiness,

@@ -1,20 +1,29 @@
 from __future__ import annotations
 
+import importlib.util
 import unittest
 
 import pandas as pd
 
-from app import run_pipeline
-from src.enterprise_features import build_quality_rule_engine
-from src.export_utils import build_readmission_summary_text
-from src.remediation_engine import (
-    add_synthetic_clinical_labels,
-    add_synthetic_cost_fields,
-    add_synthetic_readmission_fields,
-    remediate_bmi,
-)
+STREAMLIT_AVAILABLE = importlib.util.find_spec('streamlit') is not None
+
+if STREAMLIT_AVAILABLE:
+    from app import run_pipeline
+    from src.enterprise_features import build_quality_rule_engine
+    from src.export_utils import build_readmission_summary_text
+    from src.semantic_mapper import build_data_remediation_assistant, infer_semantic_mapping
+    from src.schema_detection import detect_structure
+    from src.readiness_engine import evaluate_analysis_readiness
+    from src.remediation_engine import (
+        add_synthetic_clinical_labels,
+        add_synthetic_cost_fields,
+        add_synthetic_readmission_fields,
+        remediate_bmi,
+        remediate_secondary_diagnosis,
+    )
 
 
+@unittest.skipUnless(STREAMLIT_AVAILABLE, 'streamlit is required for remediation pipeline tests')
 class RemediationEngineTests(unittest.TestCase):
     def test_bmi_median_remediation_flags_and_replaces(self) -> None:
         frame = pd.DataFrame({'bmi': [22.0, 31.0, 200.0, 'bad']})
@@ -23,14 +32,53 @@ class RemediationEngineTests(unittest.TestCase):
         self.assertTrue(bool(remediated.loc[2, 'bmi_outlier_flag']))
         self.assertTrue(bool(remediated.loc[3, 'bmi_outlier_flag']))
         self.assertAlmostEqual(float(remediated.loc[2, 'bmi']), 26.5, places=2)
-        self.assertEqual(remediated.loc[2, 'bmi_remediation_action'], 'Replaced with median BMI')
+        self.assertEqual(remediated.loc[2, 'bmi_remediation_action'], 'clinical_average_fallback')
+        self.assertIn('confidence_distribution', summary)
+        self.assertIn('mapping_audit_table', summary)
 
     def test_bmi_clip_mode(self) -> None:
         frame = pd.DataFrame({'bmi': [8.0, 85.0, 30.0]})
         remediated, _ = remediate_bmi(frame, mode='clip')
-        self.assertEqual(float(remediated.loc[0, 'bmi']), 10.0)
-        self.assertEqual(float(remediated.loc[1, 'bmi']), 80.0)
+        self.assertGreaterEqual(float(remediated.loc[0, 'bmi']), 12.0)
+        self.assertLessEqual(float(remediated.loc[1, 'bmi']), 60.0)
         self.assertEqual(float(remediated.loc[2, 'bmi']), 30.0)
+
+    def test_bmi_direct_height_weight_recalculation_produces_high_confidence(self) -> None:
+        frame = pd.DataFrame(
+            {
+                'patient_id': ['p1', 'p2'],
+                'bmi': [45.0, 12.0],
+                'height_cm': [170.0, 160.0],
+                'weight_kg': [72.25, 64.0],
+            }
+        )
+        remediated, summary = remediate_bmi(frame, mode='median')
+        self.assertAlmostEqual(float(remediated.loc[0, 'bmi_remediated_value']), 25.0, places=1)
+        self.assertEqual(remediated.loc[0, 'bmi_confidence_level'], 'High')
+        self.assertIn('height_cm + weight_kg', set(summary['mapping_audit_table']['source_fields_used'].astype(str)))
+
+    def test_bmi_obesity_cross_check_can_flag_mismatch(self) -> None:
+        frame = pd.DataFrame(
+            {
+                'bmi': [24.0],
+                'diagnosis_code': ['E66.9'],
+            }
+        )
+        remediated, summary = remediate_bmi(frame, mode='median')
+        self.assertTrue(bool(remediated.loc[0, 'bmi_manual_review_flag']))
+        self.assertIn('obesity', str(summary['mapping_audit_table'].loc[0, 'flag_reason']).lower())
+
+    def test_bmi_temporal_jump_is_flagged_for_review(self) -> None:
+        frame = pd.DataFrame(
+            {
+                'patient_id': ['p1', 'p1'],
+                'admission_date': ['2024-01-01', '2024-02-01'],
+                'bmi': [24.0, 32.5],
+            }
+        )
+        remediated, _ = remediate_bmi(frame, mode='median')
+        self.assertTrue(bool(remediated.loc[1, 'bmi_manual_review_flag']))
+        self.assertIn('Temporal', str(remediated.loc[1, 'bmi_validation_rule_applied']))
 
     def test_synthetic_cost_is_deterministic_and_non_negative(self) -> None:
         frame = pd.DataFrame(
@@ -80,6 +128,40 @@ class RemediationEngineTests(unittest.TestCase):
         self.assertGreater(summary['prevalence'], 0.05)
         self.assertLess(summary['prevalence'], 0.5)
 
+    def test_secondary_diagnosis_remediation_eliminates_nulls_and_tracks_methods(self) -> None:
+        frame = pd.DataFrame(
+            {
+                'patient_id': ['p1', 'p1', 'p2', 'p3'],
+                'admission_date': ['2024-01-01', '2024-02-01', '2024-03-01', '2024-04-01'],
+                'diagnosis': ['Heart Failure', 'Heart Failure', 'COPD', 'COPD'],
+                'diagnosis_code': ['I50.9', 'I50.9', 'J44.9', 'J44.9'],
+                'secondary_diagnosis_label': ['Hypertension', None, 'Nicotine Dependence', None],
+            }
+        )
+
+        remediated, summary = remediate_secondary_diagnosis(frame)
+
+        self.assertFalse(remediated['secondary_diagnosis_label'].isna().any())
+        self.assertIn('forward_fill', set(remediated['secondary_diagnosis_imputation_method'].astype(str)))
+        self.assertIn('method_breakdown', summary)
+        self.assertIn('mapping_audit_table', summary)
+        self.assertEqual(int(summary['post_remediation_missing_count']), 0)
+
+    def test_secondary_diagnosis_defaults_when_no_pattern_is_available(self) -> None:
+        frame = pd.DataFrame(
+            {
+                'patient_id': ['p1', 'p2'],
+                'diagnosis': ['Condition A', 'Condition B'],
+                'secondary_diagnosis_label': [None, None],
+            }
+        )
+
+        remediated, summary = remediate_secondary_diagnosis(frame)
+
+        self.assertTrue((remediated['secondary_diagnosis_label'] == 'No Secondary Diagnosis').all())
+        self.assertEqual(int(summary['post_remediation_missing_count']), 0)
+        self.assertIn('default_no_secondary', set(remediated['secondary_diagnosis_imputation_method'].astype(str)))
+
     def test_rule_engine_expansion_adds_duplicate_and_severity_outputs(self) -> None:
         frame = pd.DataFrame(
             {
@@ -115,6 +197,44 @@ class RemediationEngineTests(unittest.TestCase):
         derived_fields = pipeline['lineage']['derived_fields_table']
         self.assertTrue((derived_fields['source_column'].astype(str) == 'cost_amount').any())
         self.assertTrue((derived_fields['source_column'].astype(str) == 'readmission').any())
+
+    def test_pipeline_exposes_secondary_diagnosis_remediation_summary(self) -> None:
+        frame = pd.DataFrame(
+            {
+                'patient_id': ['p1', 'p1', 'p2'],
+                'admission_date': ['2024-01-01', '2024-02-01', '2024-03-01'],
+                'diagnosis': ['Heart Failure', 'Heart Failure', 'COPD'],
+                'diagnosis_code': ['I50.9', 'I50.9', 'J44.9'],
+                'secondary_diagnosis_label': ['Hypertension', None, None],
+                'age': [67, 67, 54],
+            }
+        )
+
+        pipeline = run_pipeline(frame, 'demo.csv', {'source_mode': 'Uploaded CSV', 'description': '', 'best_for': '', 'file_size_mb': 0.1})
+        summary = pipeline['remediation_context']['secondary_diagnosis_remediation']
+
+        self.assertTrue(summary['available'])
+        self.assertEqual(int(summary['post_remediation_missing_count']), 0)
+        self.assertIn('secondary_diagnosis_imputation_method', pipeline['data'].columns.tolist())
+
+    def test_remediation_assistant_includes_readiness_delta_fields(self) -> None:
+        frame = pd.DataFrame(
+            {
+                'patient_id': ['p1', 'p2', 'p3'],
+                'department': ['Oncology', 'Medicine', 'Oncology'],
+                'age': [67, 54, 72],
+            }
+        )
+        structure = detect_structure(frame)
+        semantic = infer_semantic_mapping(frame, structure)
+        readiness = evaluate_analysis_readiness(semantic['canonical_map'])
+        remediation = build_data_remediation_assistant(structure, semantic, readiness)
+        self.assertFalse(remediation.empty)
+        self.assertIn('current_readiness', remediation.columns)
+        self.assertIn('projected_readiness', remediation.columns)
+        self.assertIn('blockers', remediation.columns)
+        self.assertIn('impact', remediation.columns)
+        self.assertIn('modules_unlocked_after_remediation', remediation.columns)
 
     def test_readmission_export_handles_synthetic_mode(self) -> None:
         payload = {

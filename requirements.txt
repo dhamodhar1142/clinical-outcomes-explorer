@@ -1,4 +1,7 @@
+# Core runtime dependencies required for the app to launch and run its
+# supported analytics workflows in a production-friendly base install.
 streamlit
+numpy
 pandas
 plotly
 openpyxl

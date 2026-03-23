@@ -200,6 +200,8 @@ def generate_cdisc_report(df: pd.DataFrame) -> dict[str, object]:
         'badge_text': readiness['badge_text'],
         'likely_dataset_type': readiness['likely_dataset_type'],
         'subcomponents': pd.DataFrame([{'component': key.replace('_', ' ').title(), 'score': value} for key, value in readiness['subcomponents'].items()]),
+        'sdtm_detection': readiness['sdtm_detection'],
+        'adam_detection': readiness['adam_detection'],
         'validation_report': pd.DataFrame(report_rows).assign(result=lambda frame: frame['result'].astype(str)),
         'mapping_suggestions': mappings,
         'domain_templates': sdtm_validation['domain_templates'],

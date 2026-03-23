@@ -79,7 +79,7 @@ class PortfolioSupportTests(unittest.TestCase):
 
     def test_about_metadata_stability(self) -> None:
         result = build_app_metadata(self.pipeline)
-        self.assertEqual(result['product_name'], 'Smart Dataset Analyzer')
+        self.assertEqual(result['product_name'], 'Clinverity')
         self.assertIn('version', result)
         self.assertIn('synthetic', result['synthetic_support'].lower())
 

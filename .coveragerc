@@ -1,0 +1,20 @@
+[run]
+branch = True
+include =
+    src/auth.py
+    src/data_loader.py
+    src/deployment_readiness.py
+    src/persistence.py
+    src/pipeline.py
+    src/product_settings.py
+    src/profiler.py
+    src/readiness_engine.py
+    src/schema_detection.py
+    src/semantic_mapper.py
+    src/services/*.py
+    src/storage.py
+
+[report]
+skip_empty = True
+show_missing = True
+fail_under = 80

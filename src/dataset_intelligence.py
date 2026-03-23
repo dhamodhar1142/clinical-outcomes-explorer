@@ -66,18 +66,40 @@ def _dataset_type_classification(
     readiness: dict[str, object],
     healthcare: dict[str, object],
     standards: dict[str, object],
+    remediation_context: dict[str, object],
 ) -> dict[str, object]:
     canonical = _canonical_fields(semantic)
+    _, _, synthetic_list = _helper_field_summary(remediation_context)
+    synthetic_fields = set(synthetic_list)
+    native_canonical = {field for field in canonical if field not in synthetic_fields}
     readiness_score = _safe_float(readiness.get("readiness_score"))
     healthcare_score = _safe_float(healthcare.get("healthcare_readiness_score"))
     structure_conf = _safe_float(semantic.get("semantic_confidence_score"))
     cdisc = standards.get("cdisc_report", {})
 
-    diagnosis_or_proc = bool({"diagnosis_code", "procedure_code"} & canonical)
-    patient_context = bool({"patient_id", "member_id", "encounter_id"} & canonical)
-    encounter_context = bool({"admission_date", "discharge_date", "service_date", "event_date"} & canonical)
-    operational_context = bool({"provider_id", "provider_name", "facility", "department", "payer", "plan"} & canonical)
-    trial_context = bool({"diagnosis_date", "end_treatment_date", "survived", "treatment_type", "cancer_stage"} & canonical)
+    diagnosis_or_proc = bool({"diagnosis_code", "procedure_code"} & native_canonical)
+    patient_context = bool({"patient_id", "member_id", "encounter_id"} & native_canonical)
+    encounter_context = bool({"admission_date", "discharge_date", "service_date"} & native_canonical)
+    encounter_workflow_context = bool({"encounter_status_code", "encounter_status", "encounter_type_code", "encounter_type", "room_id"} & native_canonical)
+    operational_context = bool({"provider_id", "provider_name", "facility", "department", "payer", "plan"} & native_canonical)
+    trial_context = bool({"diagnosis_date", "end_treatment_date", "survived", "treatment_type", "cancer_stage"} & native_canonical)
+    native_healthcare_signal = bool(
+        {
+            "patient_id",
+            "member_id",
+            "encounter_id",
+            "admission_date",
+            "discharge_date",
+            "service_date",
+            "diagnosis_code",
+            "procedure_code",
+            "diagnosis_date",
+            "end_treatment_date",
+            "survived",
+            "cancer_stage",
+        }
+        & native_canonical
+    )
 
     label = "Generic tabular dataset"
     rationale = "The uploaded data currently behaves like a general-purpose tabular dataset with limited healthcare structure."
@@ -87,19 +109,23 @@ def _dataset_type_classification(
         label = "Trial / research-oriented dataset"
         rationale = "The dataset shows trial-style identifiers, visit structure, or research outcome fields that align with SDTM or ADaM-style review."
         confidence = min(0.95, 0.55 + _safe_float(cdisc.get("readiness_score")) / 120)
-    elif patient_context and encounter_context and operational_context:
+    elif patient_context and encounter_context and (operational_context or encounter_workflow_context):
         label = "Claims / encounter-level healthcare dataset"
-        rationale = "The dataset includes encounter-style timing, patient linking, and operational or financial fields that support claims or utilization analysis."
+        rationale = "The dataset includes encounter-style timing, patient linking, and visit workflow fields that support encounter, utilization, and readiness analysis."
         confidence = min(0.95, 0.55 + healthcare_score * 0.35)
+    elif patient_context and encounter_context:
+        label = "Encounter-oriented healthcare dataset"
+        rationale = "The dataset includes patient-linked visit timing and encounter workflow structure, but broader financial or provider context is still limited."
+        confidence = min(0.92, 0.5 + healthcare_score * 0.32)
     elif patient_context and (diagnosis_or_proc or trial_context):
         label = "Clinical / patient-level dataset"
         rationale = "The dataset includes patient-level fields plus clinical outcomes, diagnosis, or treatment context suitable for cohort and risk analytics."
         confidence = min(0.92, 0.50 + healthcare_score * 0.35)
-    elif operational_context and healthcare_score >= 0.35:
+    elif operational_context and (patient_context or encounter_context or diagnosis_or_proc or healthcare_score >= 0.55):
         label = "Mixed healthcare operational dataset"
         rationale = "The dataset has meaningful healthcare and operational context, but some clinical or encounter fields remain incomplete."
         confidence = min(0.90, 0.45 + healthcare_score * 0.30)
-    elif healthcare_score >= 0.20 or diagnosis_or_proc:
+    elif native_healthcare_signal and (healthcare_score >= 0.20 or diagnosis_or_proc):
         label = "Healthcare-related dataset"
         rationale = "The dataset contains healthcare-oriented fields, but current structure supports only selective healthcare analytics."
         confidence = min(0.85, 0.40 + max(healthcare_score, readiness_score) * 0.25)
@@ -284,17 +310,105 @@ def _capability_matrix(
     return pd.DataFrame(modules)
 
 
-def _build_explanations(capability_matrix: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+def _partial_support_detail(
+    module_name: str,
+    healthcare: dict[str, object],
+    readiness_table: pd.DataFrame,
+    remediation_context: dict[str, object],
+) -> tuple[str, str, str]:
+    if module_name == "Readmission Analytics":
+        readiness = healthcare.get("readmission", {}).get("readiness", {})
+        missing = _safe_list(readiness.get("missing_fields"))
+        unlock = _safe_list(readiness.get("additional_fields_to_unlock_full_analysis"))
+        still_works = "Overall readmission burden, segment review, drivers, cohorts, and intervention planning can still be explored."
+        what_missing = ", ".join(missing) if missing else "A native readmission flag or stronger encounter structure is still missing."
+        fields_to_unlock = ", ".join(unlock) if unlock else "readmission_flag, admission_date, discharge_date, patient_id"
+        return still_works, what_missing, fields_to_unlock
+    if module_name == "Predictive Modeling":
+        return (
+            "Baseline guided modeling can still run on the current target and feature set.",
+            "A stronger native outcome target or broader source-grade features are still missing.",
+            "readmission_flag, survived, diagnosis_code, comorbidities, cost_amount",
+        )
+    if module_name == "Cost Driver Analysis":
+        synthetic_cost = remediation_context.get("synthetic_cost", {}).get("available")
+        return (
+            "Relative cost patterns and export-ready summaries still work for exploratory review.",
+            "The dataset does not yet include a native healthcare cost or payment field." if synthetic_cost else "Native financial segmentation is still incomplete.",
+            "cost_amount, paid_amount, allowed_amount, billed_amount, payer",
+        )
+    if module_name == "Diagnosis / Procedure Analysis":
+        return (
+            "High-level clinical grouping still works for demo-safe segmentation.",
+            "Native diagnosis or procedure coding is still missing or weakly mapped.",
+            "diagnosis_code, procedure_code",
+        )
+    if module_name == "Trend Analysis":
+        return (
+            "Current snapshots and non-temporal summaries still work.",
+            "A source-grade event-style date field is still missing.",
+            "event_date, admission_date, service_date, discharge_date",
+        )
+    if module_name == "Cohort Monitoring Over Time":
+        return (
+            "Static cohort comparison still works with the current cohort filters.",
+            "Longitudinal cohort tracking still needs stronger temporal coverage.",
+            "event_date, admission_date, service_date, discharge_date",
+        )
+    if module_name == "Standards / Governance Review":
+        return (
+            "Privacy, governance, and basic standards review still work.",
+            "The dataset still needs clearer standards-aligned structure for stronger healthcare validation.",
+            "subject_id, visit, encounter_id, diagnosis_code, procedure_code",
+        )
+
+    matched = readiness_table[readiness_table.get("analysis_module", pd.Series(dtype=str)).astype(str) == module_name]
+    missing = ""
+    if not matched.empty:
+        missing = str(matched.iloc[0].get("missing_prerequisites", "")).strip()
+    return (
+        "A lighter version of this workflow still works with the current fields.",
+        missing or "Some required fields are still missing for full support.",
+        "Add the highest-impact fields from the upgrade recommendations table.",
+    )
+
+
+def _build_explanations(
+    capability_matrix: pd.DataFrame,
+    healthcare: dict[str, object],
+    readiness: dict[str, object],
+    remediation_context: dict[str, object],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     blocked = capability_matrix[capability_matrix["status"] == "blocked"].copy()
     partial = capability_matrix[capability_matrix["status"] == "partial"].copy()
+    readiness_table = _safe_df(readiness.get("readiness_table"))
     if not blocked.empty:
         blocked = blocked.rename(columns={"analytics_module": "analytics_area", "rationale": "why_blocked"})[
             ["analytics_area", "why_blocked", "support"]
         ]
     if not partial.empty:
-        partial = partial.rename(columns={"analytics_module": "analytics_area", "rationale": "why_partial"})[
-            ["analytics_area", "why_partial", "support"]
-        ]
+        partial_rows: list[dict[str, str]] = []
+        for row in partial.itertuples(index=False):
+            analytics_area = str(getattr(row, "analytics_module", ""))
+            why_partial = str(getattr(row, "rationale", ""))
+            support = str(getattr(row, "support", ""))
+            still_works, what_missing, fields_to_unlock = _partial_support_detail(
+                analytics_area,
+                healthcare,
+                readiness_table,
+                remediation_context,
+            )
+            partial_rows.append(
+                {
+                    "analytics_area": analytics_area,
+                    "why_partial": why_partial,
+                    "what_still_works": still_works,
+                    "what_is_missing": what_missing,
+                    "fields_to_unlock_full_support": fields_to_unlock,
+                    "support": support,
+                }
+            )
+        partial = pd.DataFrame(partial_rows)
     return blocked, partial
 
 
@@ -412,9 +526,14 @@ def build_dataset_intelligence_report(
     privacy_review: dict[str, object],
     compliance_governance_summary: dict[str, object],
 ) -> dict[str, object]:
-    dataset_type = _dataset_type_classification(semantic, readiness, healthcare, standards)
+    dataset_type = _dataset_type_classification(semantic, readiness, healthcare, standards, remediation_context)
     capability_matrix = _capability_matrix(semantic, readiness, healthcare, standards, privacy_review, remediation_context)
-    blocked_explanations, partial_explanations = _build_explanations(capability_matrix)
+    blocked_explanations, partial_explanations = _build_explanations(
+        capability_matrix,
+        healthcare,
+        readiness,
+        remediation_context,
+    )
     recommendations, source_improvements, highest_impact, next_actions = _build_upgrade_recommendations(
         capability_matrix,
         healthcare,

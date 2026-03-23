@@ -117,7 +117,7 @@ def build_documentation_support(
         'The platform is optimized for explainable analytics and walkthroughs rather than production orchestration.',
     ]
     sections = {
-        'project_overview': f'Smart Dataset Analyzer is a schema-flexible healthcare analytics platform for profiling, readiness review, and decision-support across clinical, operational, and governance workflows. The current dataset {dataset_name} is {float(readiness.get("readiness_score", 0.0)):.0%} ready with {int(readiness.get("available_count", 0))} active modules.',
+        'project_overview': f'Clinverity is a schema-flexible clinical data quality and analytics platform for profiling, remediation, readiness review, and decision-support across clinical, operational, and governance workflows. The current dataset {dataset_name} is {float(readiness.get("readiness_score", 0.0)):.0%} ready with {int(readiness.get("available_count", 0))} active modules.',
         'feature_list': feature_list,
         'architecture_summary': architecture,
         'demo_flow': demo_flow,
@@ -130,7 +130,7 @@ def build_documentation_support(
             'More advanced predictive and benchmarking workflows',
         ],
     }
-    portfolio_summary = f'Smart Dataset Analyzer demonstrates end-to-end healthcare analytics product thinking: profiling, remediation, standards review, predictive intelligence, governance, and stakeholder-ready reporting in a single Streamlit platform.'
+    portfolio_summary = 'Clinverity demonstrates end-to-end clinical data quality and analytics product thinking: profiling, remediation, standards review, predictive intelligence, governance, and stakeholder-ready reporting in a single Streamlit platform.'
     technical_summary = f'The platform uses modular Python services for profiling, remediation, readiness scoring, healthcare analytics, decision support, and exports, with Streamlit as the presentation layer and deterministic helper-field augmentation where source data is incomplete.'
     walkthrough_text = '\n'.join(f'- {step}' for step in demo_flow)
     return {
@@ -176,7 +176,7 @@ def build_app_metadata(pipeline: dict[str, object]) -> dict[str, object]:
     helper_count = int(pipeline.get('remediation_context', {}).get('synthetic_field_count', 0))
     readiness = pipeline.get('readiness', {})
     metadata = {
-        'product_name': 'Smart Dataset Analyzer',
+        'product_name': 'Clinverity',
         'tagline': 'Healthcare analytics, readiness review, and stakeholder reporting for real-world tabular datasets.',
         'best_for': 'Students, analysts, healthcare operators, research teams, and portfolio walkthroughs.',
         'best_data': 'Operational healthcare, claims-like, clinical, and general tabular datasets with partial or complete schema support.',
