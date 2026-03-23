@@ -3,7 +3,18 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Clinverity</title>
+  <title>Clinverity | Healthcare Data Analytics Platform</title>
+  <meta name="description" content="Upload and analyze healthcare datasets with automated validation, insights, and export workflows." />
+  <meta name="keywords" content="healthcare analytics, data analysis tool, healthcare data platform, streamlit app, data validation" />
+  <meta name="robots" content="index, follow" />
+  <meta name="author" content="Clinverity" />
+  <meta name="theme-color" content="#1f4e79" />
+  <link rel="canonical" href="https://dhamodhar1142.github.io/clinical-outcomes-explorer/landing_page.html" />
+  <meta property="og:title" content="Clinverity | Healthcare Data Analytics Platform" />
+  <meta property="og:description" content="Upload and analyze healthcare datasets with automated validation, insights, and export workflows." />
+  <meta property="og:url" content="https://dhamodhar1142.github.io/clinical-outcomes-explorer/landing_page.html" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Clinverity" />
   <style>
     :root {
       --bg: #dce8f2;
@@ -56,10 +67,19 @@
       font-size: clamp(2.2rem, 5vw, 3.8rem);
       line-height: 1.02;
     }
+    h2 {
+      margin-top: 0;
+      font-size: 1.6rem;
+    }
     .subtitle {
       color: var(--muted);
       font-size: 1.08rem;
       max-width: 640px;
+    }
+    .lede {
+      max-width: 860px;
+      font-size: 1.02rem;
+      color: var(--muted);
     }
     .actions {
       display: flex;
@@ -78,7 +98,7 @@
       font-weight: 700;
       border: 1px solid transparent;
     }
-    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary { background: var(--primary); color: #fff; }
     .btn-secondary { background: var(--panel); color: var(--text); border-color: var(--border); }
     .hero-card, .feature, .shot {
       background: var(--panel);
@@ -97,7 +117,6 @@
       padding: 28px;
       margin-top: 24px;
     }
-    .section h2 { margin-top: 0; font-size: 1.6rem; }
     .muted { color: var(--muted); }
     .shot {
       min-height: 180px;
@@ -113,7 +132,16 @@
       padding: 28px;
       text-align: center;
     }
-    ul { margin: 0; padding-left: 18px; }
+    ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+    .footer {
+      margin-top: 18px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
     @media (max-width: 900px) {
       .hero { grid-template-columns: 1fr; }
       .hero-grid { grid-template-columns: 1fr; }
@@ -128,8 +156,8 @@
         <h1>Clinical Data Quality &amp; Analytics Platform for Healthcare Datasets</h1>
         <p class="subtitle">Upload healthcare extracts, validate dataset readiness, explore healthcare intelligence, and generate audit-ready outputs from a single clinically oriented workflow.</p>
         <div class="actions">
-          <a class="btn btn-primary" href="./">Launch App</a>
-          <a class="btn btn-secondary" href="./docs/deployment.md">Deployment Guide</a>
+          <a class="btn btn-primary" href="https://clinical-outcomes-explorer-8qt5k68x3hys6saxizpaim.streamlit.app/" target="_blank" rel="noopener noreferrer">Try Live Demo</a>
+          <a class="btn btn-secondary" href="https://github.com/dhamodhar1142/clinical-outcomes-explorer" target="_blank" rel="noopener noreferrer">View Repository</a>
         </div>
       </div>
       <div class="hero-grid">
@@ -137,6 +165,16 @@
         <div class="hero-card"><strong>Readiness scoring</strong><div class="muted">Quality, semantics, trust, and module support surfaced before downstream analysis.</div></div>
         <div class="hero-card"><strong>Healthcare intelligence</strong><div class="muted">Encounter-aware analytics, cohorts, trend review, and trust-weighted interpretation.</div></div>
         <div class="hero-card"><strong>Governed exports</strong><div class="muted">Stakeholder-ready reports with lineage, disclosure, and external-reporting gates.</div></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>What Clinverity Does</h2>
+      <p class="lede">Clinverity helps healthcare teams upload operational or clinical datasets, validate structure and readiness, explore analytics safely, and generate governed exports without losing dataset context.</p>
+      <div class="features">
+        <div class="feature"><strong>What it does</strong><p class="muted">Profiles healthcare datasets, scores readiness, surfaces data quality issues, and unlocks analytics only when the source supports them.</p></div>
+        <div class="feature"><strong>Who it is for</strong><p class="muted">Built for analysts, data stewards, operations teams, clinical reviewers, and product teams validating healthcare extracts.</p></div>
+        <div class="feature"><strong>Key workflow</strong><p class="muted">Upload data, review validation results, inspect insights, and export stakeholder-ready outputs from one workflow.</p></div>
       </div>
     </section>
 
@@ -167,7 +205,7 @@
         <div class="shot"><strong>Overview</strong><div class="muted">Profile footprint, trust, readiness, and quality in one surface.</div></div>
         <div class="shot"><strong>Readiness</strong><div class="muted">See what the dataset can safely support before downstream decisions.</div></div>
         <div class="shot"><strong>Healthcare analytics</strong><div class="muted">Explore encounter-aware intelligence, trend, and cohort workflows.</div></div>
-        <div class="shot"><strong>Insights</strong><div class="muted">Generate action-oriented outputs and governed exports.</div></div>
+        <div class="shot"><strong>Insights and export</strong><div class="muted">Generate action-oriented outputs and governed exports.</div></div>
       </div>
     </section>
 
@@ -183,9 +221,13 @@
 
     <section class="cta">
       <h2>Try the Platform</h2>
-      <p class="muted">Launch the Streamlit app, try the built-in healthcare demo, or upload your own dataset to begin the readiness workflow.</p>
-      <a class="btn btn-primary" href="./">Launch App</a>
+      <p class="muted">Launch the live Streamlit experience, try the built-in healthcare demo, or upload your own dataset to begin the readiness workflow.</p>
+      <a class="btn btn-primary" href="https://clinical-outcomes-explorer-8qt5k68x3hys6saxizpaim.streamlit.app/" target="_blank" rel="noopener noreferrer">Try Live Demo</a>
     </section>
+
+    <div class="footer">
+      Google discovery surface: GitHub Pages. Product experience: Streamlit Community Cloud.
+    </div>
   </div>
 </body>
 </html>

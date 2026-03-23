@@ -209,6 +209,14 @@ Streamlit Community Cloud style startup:
 streamlit run app.py
 ```
 
+Deploy this branch:
+
+- `codex/repo-cleanup-handoff`
+
+Entry file:
+
+- `app.py`
+
 Important deployment notes:
 
 - `app.py` is the entrypoint
@@ -224,6 +232,83 @@ Important deployment notes:
 See `docs/deployment.md` for a concise deployment checklist.
 
 The repository also includes a static product layer in `landing_page.html` for demo, launch, or marketing-oriented presentation alongside the app.
+
+## Public Links
+
+- Landing Page:
+  - `https://dhamodhar1142.github.io/clinical-outcomes-explorer/landing_page.html`
+- Live App:
+  - `https://clinical-outcomes-explorer-8qt5k68x3hys6saxizpaim.streamlit.app/`
+
+## Deployment surfaces
+
+- GitHub Pages
+  - SEO and discoverability surface
+  - public product overview, feature summary, and Google-indexable landing page
+- Streamlit Community Cloud
+  - live product surface
+  - actual interactive Clinverity app for demo, upload, analysis, and export workflows
+
+Public launch flow:
+
+- Google -> GitHub Pages landing page -> Streamlit app
+
+## How to make this public on Google
+
+1. Publish the static landing page through GitHub Pages.
+2. Keep the Streamlit app as the live interactive product.
+3. Add the GitHub Pages URL as a property in Google Search Console.
+4. Verify ownership.
+5. Submit the landing page or sitemap for indexing.
+
+The landing page should be the primary indexing target. The Streamlit app remains the interactive destination.
+
+## GitHub Pages setup
+
+1. Open the repository on GitHub.
+2. Go to `Settings`.
+3. Open `Pages`.
+4. Under `Build and deployment`, choose `Deploy from a branch`.
+5. Select branch `main`.
+6. Select folder `/ (root)`.
+7. Save.
+8. Wait for GitHub Pages to publish:
+   - `https://dhamodhar1142.github.io/clinical-outcomes-explorer/landing_page.html`
+
+The repository includes:
+
+- `index.html`
+- `landing_page.html`
+- `robots.txt`
+- `sitemap.xml`
+- `.nojekyll`
+
+so no frontend build system is required.
+
+## Post-launch smoke checklist
+
+1. Confirm the GitHub Pages landing page loads.
+2. Confirm `Try Live Demo` opens the Streamlit app.
+3. Confirm the Streamlit app loads without a startup error.
+4. Confirm `Try Demo Dataset` works in the live app.
+5. Confirm a small uploaded dataset works in the live app.
+
+### Streamlit Community Cloud steps
+
+1. Open [https://share.streamlit.io](https://share.streamlit.io)
+2. Select the repository
+3. Choose branch `codex/repo-cleanup-handoff`
+4. Set the entry file to `app.py`
+5. Deploy
+
+### Post-deploy smoke test
+
+1. Confirm the app opens without a startup error
+2. Confirm the first-run empty state appears when no uploaded dataset is active
+3. Click `Try Demo Dataset`
+4. Confirm the demo dataset loads and Overview / Readiness / Key Insights render
+5. Confirm the sidebar source selector still offers `Uploaded dataset`
+6. Upload a small CSV if desired and confirm the active dataset changes from demo to uploaded
 
 ## First-run product experience
 
