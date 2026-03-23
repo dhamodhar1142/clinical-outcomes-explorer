@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://dhamodhar1142.github.io/clinical-outcomes-explorer/sitemap.xml

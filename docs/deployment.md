@@ -97,6 +97,35 @@ Recommended Streamlit Cloud notes:
 - keep the `data/` directory committed so built-in demo datasets remain available
 - use the base runtime first; optional integrations are not required for startup
 - if you use secrets, add them through the Streamlit Cloud secrets manager rather than hardcoding them
+- treat the large healthcare validation fixture as local/manual only; it is not required for cloud startup
+
+## GitHub Pages
+
+Recommended path for the public landing surface:
+
+1. Push the repository to GitHub.
+2. Open repository `Settings`.
+3. Open `Pages`.
+4. Under `Build and deployment`, select `Deploy from a branch`.
+5. Choose branch `main`.
+6. Choose folder `/ (root)`.
+7. Save and wait for GitHub Pages to publish.
+
+Expected public landing URL:
+
+```text
+https://dhamodhar1142.github.io/clinical-outcomes-explorer/landing_page.html
+```
+
+GitHub Pages files included in the repository:
+
+- `index.html`
+- `landing_page.html`
+- `robots.txt`
+- `sitemap.xml`
+- `.nojekyll`
+
+This keeps the public SEO surface fully static and separate from the Streamlit app runtime.
 
 ### Updating the deployed app
 
@@ -111,12 +140,42 @@ Recommended Streamlit Cloud notes:
   - `python -m compileall app.py src ui tests scripts`
   - `python -c "import app; print('app import ok')"`
   - `.\scripts\run_quick_validation.ps1`
+- if the app fails before rendering the UI, check for missing base packages, missing built-in demo files under `data/`, or a startup exception in the Streamlit Cloud runtime log
 
 ### Demo-ready behavior
 
 - first-time users can use the built-in `Try Demo Dataset` path from the empty state
 - uploaded dataset mode remains authoritative until the user explicitly switches source
 - large uploaded CSV files still use the same validated hybrid streaming path in cloud environments
+- very large uploads may run in sampled interactive mode first on Streamlit Community Cloud because cloud memory and runtime budgets are lower than local validation machines
+
+## Google Search Console
+
+Recommended indexing target:
+
+- the GitHub Pages landing page, not the Streamlit app
+
+Short setup flow:
+
+1. Open [https://search.google.com/search-console](https://search.google.com/search-console)
+2. Add a property for the GitHub Pages URL
+3. Verify ownership using one of Google Search Console's supported methods
+4. Submit:
+   - the landing page URL, or
+   - `https://dhamodhar1142.github.io/clinical-outcomes-explorer/sitemap.xml`
+
+Why this split works:
+
+- GitHub Pages is the discoverability and indexing surface
+- Streamlit Cloud is the interactive product destination
+
+## Post-launch smoke check
+
+1. Confirm the GitHub Pages landing page loads.
+2. Confirm `Try Live Demo` opens the Streamlit app.
+3. Confirm the Streamlit app loads without startup errors.
+4. Confirm `Try Demo Dataset` works.
+5. Confirm a small upload works in the live app.
 
 ## Streamlit deployment checklist
 
