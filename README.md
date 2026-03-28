@@ -1,9 +1,9 @@
-# Smart Dataset Analyzer
+# Clinverity
 
-Smart Dataset Analyzer is an advanced **healthcare analytics and data intelligence platform** built with Python and Streamlit.  
-It helps analysts and healthcare teams **profile messy datasets, detect structural and semantic patterns, unlock blocked analytics workflows, and generate stakeholder-ready reports**.
+Clinverity is an advanced **healthcare data readiness, analytics, and reporting platform** built with Python and Streamlit.  
+It helps healthcare teams **turn raw clinical or operational datasets into trusted readiness assessments, actionable analytics, and stakeholder-ready reports**.
 
-The platform combines **data profiling, remediation pipelines, predictive modeling, governance checks, and decision-support tools** into a single interactive analytics environment.
+The platform combines **data profiling, remediation pipelines, healthcare analytics, governance checks, and decision-support tools** into a single interactive workflow.
 
 It is designed as a **portfolio-ready analytics product** that demonstrates how modern healthcare analytics systems can:
 
@@ -15,6 +15,16 @@ It is designed as a **portfolio-ready analytics product** that demonstrates how 
 
 This repository demonstrates **analytics engineering, healthcare data science, governance-aware analytics design, and product-style dashboard development** in one project.
 
+## Product statement
+
+Clinverity helps healthcare teams turn raw clinical or operational datasets into trusted readiness assessments, actionable analytics, and stakeholder-ready reports.
+
+## Core outcomes
+
+- Make dataset risk visible fast
+- Turn healthcare data into decisions
+- Package proof for stakeholders
+
 ## Why this project exists
 
 Real-world healthcare and operational datasets are rarely clean, fully mapped, or immediately analytics-ready. This project demonstrates how a modern analytics product can:
@@ -23,7 +33,13 @@ Real-world healthcare and operational datasets are rarely clean, fully mapped, o
 - profile and score dataset readiness automatically
 - surface healthcare-specific analytics only when the data supports them
 - disclose synthetic helper support transparently when demo-safe augmentation is used
-- produce polished stakeholder outputs for analysts, operators, and recruiters
+- produce polished stakeholder outputs for analysts, operators, clients, and recruiters
+
+## Delivery pack
+
+The focused 7-day packaging assets live here:
+
+- [docs/clinverity_7_day_delivery_pack.md](C:\Users\dhamo\OneDrive\Desktop\clinical-outcomes-explorer\docs\clinverity_7_day_delivery_pack.md)
 
 ## Key capabilities
 

@@ -48,6 +48,14 @@ from src.modules.privacy_security import apply_export_watermark, build_export_go
 from src.modules.rbac import can_access
 from src.ops_hardening import build_export_safety_note
 from src.plan_awareness import plan_feature_enabled
+from src.product_story import (
+    PRODUCT_ONE_LINER,
+    build_core_outcomes_table,
+    build_demo_script_text,
+    build_demo_walkthrough_table,
+    build_professional_export_template,
+    build_role_pitch_table,
+)
 from src.services.copilot_service import execute_copilot_prompt, plan_copilot_workflow
 from src.services.export_service import generate_export_report_output, prepare_policy_aware_export_bundle, record_export_bundle_metadata_once
 from src.ui_components import metric_row, render_advanced_sections_toggle, render_badge_row, render_role_context_panel, render_section_intro, render_surface_panel, render_subsection_header, render_workflow_steps
@@ -145,6 +153,16 @@ def render_key_insights(pipeline: dict[str, Any], dataset_name: str) -> None:
     render_surface_panel(
         'Insight workflow',
         'Use this surface to review prioritized findings, intervention signals, explainability notes, and governed narrative output for the active dataset.',
+    )
+    render_surface_panel(
+        'Clinverity value story',
+        PRODUCT_ONE_LINER,
+        tone='accent',
+    )
+    render_subsection_header('Core outcomes', 'Keep the product story tight: fast risk visibility, actionable analytics, and stakeholder-ready packaging.')
+    info_or_table(
+        build_core_outcomes_table(),
+        'Core product outcomes will appear here when Clinverity positioning content is available.',
     )
     render_workflow_steps(
         [
@@ -360,6 +378,11 @@ def render_export_center(pipeline: dict[str, Any], dataset_name: str, source_met
     render_surface_panel(
         'Export workflow guidance',
         'Choose the smallest approved handoff that fits the audience: one primary report, the necessary support tables, and governance material only when the review requires it.',
+    )
+    render_surface_panel(
+        'Why this matters',
+        PRODUCT_ONE_LINER,
+        tone='accent',
     )
     advanced_export_sections_enabled = render_advanced_sections_toggle(
         'export_center',
@@ -721,6 +744,7 @@ def render_export_center(pipeline: dict[str, Any], dataset_name: str, source_met
     bundle_title = export_bundle['bundle_title']
     bundle_table = export_bundle['bundle_table']
     export_presets = _build_export_workflow_presets(pipeline, role)
+    professional_template = build_professional_export_template(report_mode)
     remediation = pipeline.get('remediation_context', {})
     audience_guidance = build_audience_mode_guidance(
         role,
@@ -736,8 +760,22 @@ def render_export_center(pipeline: dict[str, Any], dataset_name: str, source_met
         return apply_export_watermark(protected, str(policy_eval.get('watermark_label', 'Internal export')))
 
     with export_sections['strategy']:
+        render_subsection_header('Executive proof points')
+        metric_row([
+            ('Health score', str(int(pipeline.get('quality', {}).get('quality_score', 0) or 0))),
+            ('Readiness', fmt(pipeline.get('readiness', {}).get('readiness_score', 0.0), 'score')),
+            ('Trust', str(trust_summary.get('trust_level', 'Not available'))),
+            ('Top risk', str(pipeline.get('dataset_intelligence', {}).get('highest_risk_area', 'Quality / readiness review'))),
+        ])
         render_subsection_header('Recommended export bundle')
         st.write(f"Recommended report for **{role}**: **{recommended_report_mode_for_role(role)}**")
+        if not safe_df(pipeline.get('action_recommendations')).empty:
+            render_subsection_header('Top recommendations')
+            for _, row in safe_df(pipeline.get('action_recommendations')).head(3).iterrows():
+                st.write(
+                    f"- **{row.get('recommendation_title', 'Recommendation')}**"
+                    f": {row.get('why_it_matters', row.get('recommendation_summary', ''))}"
+                )
         render_subsection_header('Audience output guidance')
         st.write(str(audience_guidance.get('help_text', 'Audience-specific output guidance is not available yet.')))
         info_or_table(safe_df(audience_guidance.get('recommended_outputs')), 'Audience-specific output guidance appears here once the current role and dataset context are in scope.')
@@ -758,6 +796,25 @@ def render_export_center(pipeline: dict[str, Any], dataset_name: str, source_met
         info_or_table(cross_setting, 'Cross-setting reporting guidance appears here when the current dataset maps cleanly to one or more review contexts.')
         info_or_table(bundle_manifest, 'Bundle manifest details appear here after the export bundle profile is prepared for the selected role.')
         tracked_download_button('Download bundle manifest CSV', data=dataframe_to_csv_bytes(bundle_manifest), file_name='role_export_bundle_manifest.csv', mime='text/csv', disabled=not advanced_exports_allowed, event_detail='Downloaded the role export bundle manifest CSV.')
+        with st.expander('Professional report template', expanded=False):
+            st.caption(str(professional_template.get('title', 'Professional export template')))
+            info_or_table(
+                pd.DataFrame({'section': professional_template.get('sections', [])}),
+                'Template sections will appear here once the selected report mode is available.',
+            )
+            for principle in professional_template.get('principles', []):
+                st.write(f'- {principle}')
+        with st.expander('Demo walkthrough and pitch pack', expanded=False):
+            info_or_table(
+                build_demo_walkthrough_table(),
+                'Demo walkthrough guidance will appear here when Clinverity positioning content is available.',
+            )
+            info_or_table(
+                build_role_pitch_table(),
+                'Role-based pitch variants will appear here when the pitch pack is available.',
+            )
+            st.caption('3-5 minute demo script')
+            st.code(build_demo_script_text(), language='text')
         tracked_download_button('Download bundle guide TXT', data=protect(bundle_text), file_name='role_export_bundle_guide.txt', mime='text/plain', disabled=not advanced_exports_allowed, event_detail='Downloaded the role export bundle guide TXT.')
         application_service = st.session_state.get('application_service')
         if not bundle_manifest.empty:
