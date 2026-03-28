@@ -330,6 +330,11 @@ def _load_uploaded_dataset_artifact(
             'source_mode': source_meta['source_mode'],
             'row_count': len(data),
             'column_count': len(data.columns),
+            'source_columns': [str(column) for column in data.columns],
+            'source_dtypes': {
+                str(column): str(dtype)
+                for column, dtype in data.dtypes.items()
+            },
             'file_size_mb': source_meta['file_size_mb'],
             'description': source_meta['description'],
             'best_for': source_meta['best_for'],

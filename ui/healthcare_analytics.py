@@ -270,6 +270,65 @@ def _render_population_health(section: dict[str, Any]) -> None:
         )
 
 
+def _render_claims_validation_utilization(section: dict[str, Any]) -> None:
+    st.markdown('### Claims Validation & Utilization Engine')
+    if not section.get('available'):
+        st.info(section.get('reason', 'Claims validation and utilization analytics are not available for the current dataset.'))
+        return
+    render_surface_panel(
+        'Claims workflow',
+        'Validate claim identity, duplicate submissions, service-date completeness, and paid-vs-allowed-vs-billed integrity while surfacing payer, provider, diagnosis, and monthly utilization patterns for payer and claims-style healthcare workflows.',
+        tone='accent',
+    )
+    st.caption(
+        'This module helps claims and payer reviewers move from file triage into operational interpretation by showing which claim-quality issues need follow-up and where utilization or financial exposure is concentrated.'
+    )
+    metric_row([(card['label'], card['value']) for card in section.get('summary_cards', [])[:4]])
+    st.caption(str(section.get('narrative', '')))
+    st.caption(f"Workflow status: {section.get('readiness_label', 'Available')}")
+    info_or_table(
+        safe_df(section.get('validation_table')),
+        'No claim-validation checks are available for the current dataset.',
+    )
+    info_or_table(
+        safe_df(section.get('financial_summary')),
+        'No financial summary is available for the current dataset.',
+    )
+    st.markdown('#### Payer Utilization')
+    payer_table = safe_df(section.get('payer_utilization'))
+    info_or_table(payer_table, 'No payer utilization table is available.')
+    if not payer_table.empty:
+        metric_col = 'total_paid_amount' if 'total_paid_amount' in payer_table.columns else 'claim_rows'
+        info_or_chart(
+            plot_bar(payer_table.head(10), payer_table.columns[0], metric_col, 'Payer Utilization'),
+            'No payer utilization chart is available.',
+        )
+    st.markdown('#### Monthly Claims Trend')
+    monthly_table = safe_df(section.get('monthly_utilization'))
+    info_or_table(monthly_table, 'No monthly claims trend is available.')
+    if not monthly_table.empty and 'service_month' in monthly_table.columns:
+        metric_col = 'total_paid_amount' if 'total_paid_amount' in monthly_table.columns else 'claim_rows'
+        info_or_chart(
+            plot_time_trend(monthly_table, 'service_month', metric_col, 'Monthly Claims Trend'),
+            'No claims trend chart is available.',
+        )
+    st.markdown('#### Provider Utilization')
+    info_or_table(
+        safe_df(section.get('provider_utilization')),
+        'No provider utilization table is available.',
+    )
+    st.markdown('#### Diagnosis Utilization')
+    info_or_table(
+        safe_df(section.get('diagnosis_utilization')),
+        'No diagnosis utilization table is available.',
+    )
+    st.markdown('#### Flagged Claims Review')
+    info_or_table(
+        safe_df(section.get('flagged_rows')),
+        'No flagged claims were identified for the current dataset.',
+    )
+
+
 def _render_clinical_outcome_benchmarks(pipeline: dict[str, Any]) -> None:
     st.markdown('### Clinical Outcome Benchmarks')
     outcome_benchmarks = pipeline['healthcare'].get('clinical_outcome_benchmarks', {})
@@ -365,6 +424,7 @@ def render_healthcare(pipeline: dict[str, Any]) -> None:
         synthetic_notes.append('Readmission analytics are enabled with a deterministic synthetic flag for workflow demonstration.')
     for note in synthetic_notes:
         st.caption(note)
+    _render_claims_validation_utilization(healthcare.get('claims_validation_utilization', {}))
     for key, table_key, metric_col, title in [
         ('utilization', 'monthly_utilization', 'event_count', 'Monthly utilization trend'),
         ('cost', 'by_segment', 'total_cost', 'Top cost drivers'),

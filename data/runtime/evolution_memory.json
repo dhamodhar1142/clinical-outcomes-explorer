@@ -1,0 +1,184 @@
+{
+  "family_memory": {
+    "hospital-encounters": {
+      "family_label": "Hospital Encounter Feed",
+      "last_dataset_name": "SMALL_HEALTHCARE_VISITS.csv",
+      "observation_count": 17,
+      "pattern_counts": {
+        "Native-source dependence": 17,
+        "Semantic coverage": 17,
+        "External reporting safety": 17
+      },
+      "last_summary_text": "Clinverity is actively learning from the Hospital Encounter Feed pattern for SMALL_HEALTHCARE_VISITS.csv. Its primary goal for this dataset is readmission reduction analytics. It found 3 ranked improvement opportunities, 0 safe adaptive actions, and 3 draft upgrade proposals.",
+      "goal_counts": {
+        "Readmission reduction analytics": 15
+      },
+      "last_snapshot": {
+        "readiness_score": 0.864375,
+        "trust_score": 0.85,
+        "helper_columns_added": 11,
+        "goal_profile": "Readmission reduction analytics",
+        "total_source_columns": 21,
+        "strongly_mapped_columns": 17,
+        "blocked_reporting_module_count": 2,
+        "benchmark_profile": "Payer Claims"
+      },
+      "run_history": [
+        {
+          "recorded_at": "2026-03-28T03:39:09.958911+00:00",
+          "dataset_name": "SMALL_HEALTHCARE_VISITS.csv",
+          "goal_profile": "Readmission reduction analytics",
+          "readiness_score": 0.864375,
+          "trust_score": 0.85,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-28T12:59:01.092911+00:00",
+          "dataset_name": "SMALL_HEALTHCARE_VISITS.csv",
+          "goal_profile": "Readmission reduction analytics",
+          "readiness_score": 0.864375,
+          "trust_score": 0.85,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-28T13:04:31.851448+00:00",
+          "dataset_name": "SMALL_HEALTHCARE_VISITS.csv",
+          "goal_profile": "Readmission reduction analytics",
+          "readiness_score": 0.864375,
+          "trust_score": 0.85,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-28T13:08:33.711287+00:00",
+          "dataset_name": "SMALL_HEALTHCARE_VISITS.csv",
+          "goal_profile": "Readmission reduction analytics",
+          "readiness_score": 0.864375,
+          "trust_score": 0.85,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-28T13:16:46.250951+00:00",
+          "dataset_name": "SMALL_HEALTHCARE_VISITS.csv",
+          "goal_profile": "Readmission reduction analytics",
+          "readiness_score": 0.864375,
+          "trust_score": 0.85,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-28T13:21:59.932583+00:00",
+          "dataset_name": "SMALL_HEALTHCARE_VISITS.csv",
+          "goal_profile": "Readmission reduction analytics",
+          "readiness_score": 0.864375,
+          "trust_score": 0.85,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-28T13:25:38.808099+00:00",
+          "dataset_name": "SMALL_HEALTHCARE_VISITS.csv",
+          "goal_profile": "Readmission reduction analytics",
+          "readiness_score": 0.864375,
+          "trust_score": 0.85,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-28T13:28:58.171710+00:00",
+          "dataset_name": "SMALL_HEALTHCARE_VISITS.csv",
+          "goal_profile": "Readmission reduction analytics",
+          "readiness_score": 0.864375,
+          "trust_score": 0.85,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-28T13:33:32.507264+00:00",
+          "dataset_name": "SMALL_HEALTHCARE_VISITS.csv",
+          "goal_profile": "Readmission reduction analytics",
+          "readiness_score": 0.864375,
+          "trust_score": 0.85,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-28T13:36:53.941405+00:00",
+          "dataset_name": "SMALL_HEALTHCARE_VISITS.csv",
+          "goal_profile": "Readmission reduction analytics",
+          "readiness_score": 0.864375,
+          "trust_score": 0.85,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-28T13:40:11.597657+00:00",
+          "dataset_name": "SMALL_HEALTHCARE_VISITS.csv",
+          "goal_profile": "Readmission reduction analytics",
+          "readiness_score": 0.864375,
+          "trust_score": 0.85,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-28T13:43:14.947247+00:00",
+          "dataset_name": "SMALL_HEALTHCARE_VISITS.csv",
+          "goal_profile": "Readmission reduction analytics",
+          "readiness_score": 0.864375,
+          "trust_score": 0.85,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        }
+      ]
+    }
+  },
+  "last_dataset_name": "SMALL_HEALTHCARE_VISITS.csv",
+  "last_family_key": "hospital-encounters",
+  "execution_queue": [
+    {
+      "proposal_title": "Native-source dependence upgrade",
+      "proposal_type": "Adaptive spec",
+      "priority": "High",
+      "proposed_change": "Target helper-backed concepts first when refining schema mapping or upstream extracts.",
+      "suggested_validation": "Keep ranking future work by helper dependence and trust impact.",
+      "dataset_name": "SMALL_HEALTHCARE_VISITS.csv",
+      "dataset_family_key": "hospital-encounters",
+      "status": "Queued"
+    },
+    {
+      "proposal_title": "Semantic coverage upgrade",
+      "proposal_type": "Adaptive spec",
+      "priority": "Medium",
+      "proposed_change": "Confirm the important unresolved fields and save them as a reusable dataset-family mapping profile.",
+      "suggested_validation": "Promote approved manual mappings into future auto-suggestions.",
+      "dataset_name": "SMALL_HEALTHCARE_VISITS.csv",
+      "dataset_family_key": "hospital-encounters",
+      "status": "Queued"
+    },
+    {
+      "proposal_title": "External reporting safety upgrade",
+      "proposal_type": "Adaptive spec",
+      "priority": "Medium",
+      "proposed_change": "Review the module-level reporting gates before approving outward-facing deliverables.",
+      "suggested_validation": "Turn repeated gate failures into approval defaults and checklist policy.",
+      "dataset_name": "SMALL_HEALTHCARE_VISITS.csv",
+      "dataset_family_key": "hospital-encounters",
+      "status": "Queued"
+    }
+  ]
+}

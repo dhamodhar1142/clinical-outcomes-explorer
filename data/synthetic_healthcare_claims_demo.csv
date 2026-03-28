@@ -1,0 +1,26 @@
+member_id,claim_id,provider_id,provider_name,service_date,admit_date,discharge_date,diagnosis_code,procedure_code,payer,plan,line_of_business,billed_amount,allowed_amount,paid_amount,encounter_type,place_of_service
+M1001,CLM0001,PR2001,North Valley Clinic,2025-01-03,2025-01-03,2025-01-03,I10,99213,Aetna,Commercial Gold,Commercial,210.00,180.00,175.00,Outpatient,Office
+M1002,CLM0002,PR2002,Lakeside Medical Group,2025-01-04,2025-01-04,2025-01-04,E11,83036,BlueCross,Commercial Silver,Commercial,345.00,290.00,285.00,Outpatient,Office
+M1003,CLM0003,PR2003,Metro Specialty Center,2025-01-05,2025-01-05,2025-01-05,J45,94640,Cigna,Commercial Choice,Commercial,420.00,360.00,350.00,Outpatient,Urgent Care
+M1004,CLM0004,PR2004,Westside Hospital,2025-01-06,2025-01-06,2025-01-08,I50,99223,United,Medicare Advantage,Medicare,5800.00,4700.00,4550.00,Inpatient,Hospital
+M1005,CLM0005,PR2005,Riverbend Health,2025-01-06,2025-01-06,2025-01-06,M54,72100,Aetna,Commercial Gold,Commercial,510.00,430.00,420.00,Outpatient,Imaging Center
+M1006,CLM0006,PR2001,North Valley Clinic,2025-01-07,2025-01-07,2025-01-07,E78,80061,BlueCross,Commercial Silver,Commercial,190.00,155.00,150.00,Outpatient,Office
+M1007,CLM0007,PR2006,South County Hospital,2025-01-08,2025-01-08,2025-01-10,N39,99222,Humana,Medicare HMO,Medicare,4600.00,3900.00,3825.00,Inpatient,Hospital
+M1008,CLM0008,PR2007,East Metro Imaging,2025-01-09,2025-01-09,2025-01-09,S83,73721,Cigna,Commercial Choice,Commercial,980.00,810.00,790.00,Outpatient,Imaging Center
+M1009,CLM0009,PR2008,Sunrise Primary Care,2025-01-10,2025-01-10,2025-01-10,I10,93000,Aetna,Commercial Gold,Commercial,260.00,220.00,215.00,Outpatient,Office
+M1010,CLM0010,PR2009,Oak Family Practice,2025-01-11,2025-01-11,2025-01-11,E11,82947,United,Exchange Bronze,Exchange,175.00,140.00,138.00,Outpatient,Office
+M1011,CLM0011,PR2010,City Ortho Associates,2025-01-12,2025-01-12,2025-01-12,M17,73564,BlueCross,Commercial Silver,Commercial,670.00,540.00,560.00,Outpatient,Office
+M1012,CLM0012,PR2004,Westside Hospital,2025-01-13,2025-01-13,2025-01-15,J18,99223,Humana,Medicare HMO,Medicare,6200.00,5100.00,5050.00,Inpatient,Hospital
+M1013,CLM0013,PR2011,Community Rehab Center,2025-01-14,2025-01-14,2025-01-14,M25,97110,Cigna,Commercial Choice,Commercial,390.00,315.00,300.00,Outpatient,Rehab
+M1014,CLM0014,PR2003,Metro Specialty Center,,2025-01-15,2025-01-15,J45,94010,Aetna,Commercial Gold,Commercial,310.00,255.00,245.00,Outpatient,Specialty Clinic
+M1015,CLM0015,PR2006,South County Hospital,2025-01-16,2025-01-16,2025-01-18,I21,92928,United,Medicare Advantage,Medicare,15400.00,12400.00,12650.00,Inpatient,Hospital
+M1016,CLM0016,PR2012,Hillside Pediatrics,2025-01-17,2025-01-17,2025-01-17,H66,99214,BlueCross,Commercial Silver,Commercial,225.00,185.00,180.00,Outpatient,Office
+M1017,CLM0017,PR2013,Downtown ER Partners,2025-01-18,2025-01-18,2025-01-18,R07,99284,Cigna,Commercial Choice,Commercial,1450.00,980.00,950.00,Emergency,Emergency Room
+M1018,CLM0018,PR2008,Sunrise Primary Care,2025-01-19,2025-01-19,2025-01-19,Z00,99395,Aetna,Commercial Gold,Commercial,260.00,210.00,205.00,Outpatient,Office
+M1019,CLM0019,PR2005,Riverbend Health,2025-01-20,2025-01-20,2025-01-20,M54,72100,BlueCross,Commercial Silver,Commercial,495.00,410.00,-25.00,Outpatient,Imaging Center
+M1020,CLM0020,PR2014,Central Cardiology,2025-01-21,2025-01-21,2025-01-21,I48,93224,United,Exchange Bronze,Exchange,880.00,720.00,705.00,Outpatient,Specialty Clinic
+M1007,CLM0007,PR2006,South County Hospital,2025-01-08,2025-01-08,2025-01-10,N39,99222,Humana,Medicare HMO,Medicare,4600.00,3900.00,3825.00,Inpatient,Hospital
+M1021,CLM0021,PR2015,Regional Ambulatory Surgery,2025-01-22,2025-01-22,2025-01-22,K40,49505,Cigna,Commercial Choice,Commercial,3200.00,2550.00,2500.00,Outpatient,Ambulatory Surgery Center
+M1022,CLM0022,PR2016,Northside Behavioral Health,2025-01-23,2025-01-23,2025-01-23,F41,90837,Aetna,Commercial Gold,Commercial,290.00,240.00,235.00,Outpatient,Behavioral Health
+M1023,CLM0023,PR2009,Oak Family Practice,2025-01-24,2025-01-24,2025-01-24,E78,80061,BlueCross,Commercial Silver,Commercial,185.00,150.00,147.00,Outpatient,Office
+M1024,CLM0024,PR2017,Valley Home Health,2025-01-25,2025-01-25,2025-01-25,Z74,G0156,Humana,Medicare HMO,Medicare,640.00,500.00,490.00,Home Health,Home

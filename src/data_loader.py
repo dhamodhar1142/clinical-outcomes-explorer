@@ -21,6 +21,11 @@ DEMO_DATASETS = {
         'description': 'Hospital Operations Demo Dataset with encounter dates, treatment context, stage groupings, readmission outcomes, and financial signals for realistic healthcare walkthroughs.',
         'best_for': 'Healthcare operations, cohort analysis, trend review, risk segmentation, and readmission-style analysis.',
     },
+    'Healthcare Claims Demo': {
+        'path': DATA_DIR / 'synthetic_healthcare_claims_demo.csv',
+        'description': 'Claims-focused payer and utilization demo with member, claim, provider, diagnosis, financial, and encounter fields plus a few intentional integrity issues for validation review.',
+        'best_for': 'Claims validation, payer mix review, financial integrity checks, provider utilization, and recruiter-friendly healthcare claims walkthroughs.',
+    },
     'Hospital Reporting Demo': {
         'path': DATA_DIR / 'synthetic_hospital_quality_reporting.csv',
         'description': 'Hospital quality reporting data with provider IDs, measure names, scores, denominators, and benchmark comparisons.',

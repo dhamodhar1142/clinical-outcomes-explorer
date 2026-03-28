@@ -99,6 +99,63 @@ class ServiceLayerTests(unittest.TestCase):
         self.assertEqual(demo_config['executive_summary_verbosity'], 'Concise')
         self.assertEqual(session_state['run_history'], updated)
 
+    def test_application_service_hydrates_persisted_settings_over_defaults(self) -> None:
+        class _PersistenceService:
+            enabled = True
+
+            def load_user_settings(self, identity):
+                return {
+                    'accuracy_benchmark_profile': 'Hospital Encounters',
+                    'evolution_execution_queue': [{'proposal_title': 'Queued item'}],
+                    'governance_default_owner': 'Data Steward',
+                    'validation_runtime_preference': 'Prefer local/staging for heavy actions',
+                    'approval_routing_rules': {'release_signoff': 'Admin'},
+                    'governance_policy_packs': {'Enterprise Release Controls': {'export_policy_name': 'Internal Review'}},
+                }
+
+            def save_user_settings(self, identity, settings):
+                return None
+
+        application_service = build_workspace_application_service(_PersistenceService())
+        session_state = {
+            'workspace_identity': {'workspace_id': 'workspace-a', 'user_id': 'user-a'},
+            'accuracy_benchmark_profile': 'Auto',
+            'evolution_execution_queue': [],
+        }
+
+        application_service.hydrate_user_settings(session_state)
+
+        self.assertEqual(session_state['accuracy_benchmark_profile'], 'Hospital Encounters')
+        self.assertEqual(session_state['evolution_execution_queue'][0]['proposal_title'], 'Queued item')
+        self.assertEqual(session_state['governance_default_owner'], 'Data Steward')
+        self.assertEqual(session_state['validation_runtime_preference'], 'Prefer local/staging for heavy actions')
+        self.assertEqual(session_state['approval_routing_rules']['release_signoff'], 'Admin')
+        self.assertIn('Enterprise Release Controls', session_state['governance_policy_packs'])
+
+    def test_application_service_build_active_controls_includes_policy_center_fields(self) -> None:
+        application_service = build_workspace_application_service(persistence_service=None)
+        session_state = {
+            'analysis_template': 'General Review',
+            'report_mode': 'Executive Summary',
+            'governance_default_owner': 'Admin',
+            'governance_default_reviewer_role': 'Data Steward',
+            'governance_release_gate_mode': 'Strict signoff',
+            'validation_runtime_preference': 'Auto',
+            'export_runtime_preference': 'Allow lightweight cloud actions only',
+            'governance_policy_packs': {'Pack A': {'export_policy_name': 'Internal Review'}},
+            'approval_routing_rules': {'mapping_approval': 'Data Steward'},
+        }
+
+        controls = application_service.build_active_controls(session_state)
+
+        self.assertEqual(controls['governance_default_owner'], 'Admin')
+        self.assertEqual(controls['governance_default_reviewer_role'], 'Data Steward')
+        self.assertEqual(controls['governance_release_gate_mode'], 'Strict signoff')
+        self.assertEqual(controls['validation_runtime_preference'], 'Auto')
+        self.assertEqual(controls['export_runtime_preference'], 'Allow lightweight cloud actions only')
+        self.assertIn('Pack A', controls['governance_policy_packs'])
+        self.assertEqual(controls['approval_routing_rules']['mapping_approval'], 'Data Steward')
+
     def test_application_service_executes_analysis_and_runtime_finalization(self) -> None:
         application_service = build_workspace_application_service(persistence_service=None)
         session_state = {
@@ -256,6 +313,8 @@ class ServiceLayerTests(unittest.TestCase):
         self.assertIn('semantic_mapping_profiles', session_state)
         self.assertIn('organization_benchmark_packs', session_state)
         self.assertIn('dataset_review_approvals', session_state)
+        self.assertIn('evolution_memory', session_state)
+        self.assertIn('evolution_execution_queue', session_state)
         self.assertIs(session_state['persistence_service'], services.persistence_service)
         admin_view = services.admin_ops_service.build_admin_ops_view(
             workspace_identity=session_state['workspace_identity'],

@@ -16,6 +16,7 @@ class ExportGenerationPipelineTests(unittest.TestCase):
     def test_export_generation_pipeline_supports_all_demo_datasets(self) -> None:
         demo_cases = [
             ('Healthcare Operations Demo', 'Executive Report'),
+            ('Healthcare Claims Demo', 'Claims Validation Report'),
             ('Hospital Reporting Demo', 'Analyst Report'),
             ('Generic Business Demo', 'Data Readiness Report'),
         ]

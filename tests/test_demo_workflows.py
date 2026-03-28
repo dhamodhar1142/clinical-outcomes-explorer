@@ -40,6 +40,28 @@ class DemoWorkflowIntegrationTests(unittest.TestCase):
                 self.assertIn('quality_score', pipeline['quality'])
                 self.assertIn('readiness_score', pipeline['readiness'])
 
+    def test_healthcare_claims_demo_activates_claims_workflow(self) -> None:
+        data, _ = load_demo_dataset('Healthcare Claims Demo')
+        data.attrs.setdefault('dataset_cache_key', 'demo::Healthcare Claims Demo')
+        pipeline = run_analysis_pipeline(
+            data,
+            'Healthcare Claims Demo',
+            {
+                'source_mode': 'Demo dataset',
+                'description': DEMO_DATASETS['Healthcare Claims Demo']['description'],
+                'best_for': DEMO_DATASETS['Healthcare Claims Demo']['best_for'],
+                'file_size_mb': 0.1,
+            },
+            demo_config={'synthetic_helper_mode': 'Auto'},
+            active_control_values={'report_mode': 'Operational Report'},
+        )
+
+        claims = pipeline['healthcare'].get('claims_validation_utilization', {})
+        self.assertTrue(claims.get('available'))
+        self.assertFalse(claims.get('validation_table').empty)
+        self.assertFalse(claims.get('payer_utilization').empty)
+        self.assertFalse(claims.get('monthly_utilization').empty)
+
 
 if __name__ == '__main__':
     unittest.main()

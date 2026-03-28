@@ -6,6 +6,14 @@ from unittest.mock import patch
 
 import pandas as pd
 
+from src.evolution_engine import (
+    append_review_history,
+    apply_execution_autopilot,
+    build_dataset_version_diff,
+    build_execution_autopilot_actions,
+    build_release_readiness_summary,
+    record_outcome_feedback,
+)
 from src.healthcare_analysis import assess_healthcare_dataset
 from src.readiness_engine import evaluate_analysis_readiness
 from src.pipeline import AnalysisCancelledError, finalize_runtime_pipeline, run_analysis_pipeline
@@ -189,8 +197,10 @@ class PipelineFoundationTests(unittest.TestCase):
         self.assertIn('lineage', pipeline)
         self.assertIn('analysis_trust_summary', pipeline)
         self.assertIn('result_accuracy_summary', pipeline)
+        self.assertIn('evolution_summary', pipeline)
         self.assertTrue(pipeline['analysis_trust_summary'].get('available'))
         self.assertTrue(pipeline['result_accuracy_summary'].get('available'))
+        self.assertTrue(pipeline['evolution_summary'].get('available'))
         self.assertIn('summary_text', pipeline['analysis_trust_summary'])
         self.assertTrue(str(pipeline['analysis_trust_summary'].get('summary_text', '')).strip())
         self.assertFalse(pipeline['result_accuracy_summary']['module_reporting_gates'].empty)
@@ -200,6 +210,19 @@ class PipelineFoundationTests(unittest.TestCase):
         self.assertIn('uncertainty_narrative', pipeline['result_accuracy_summary'])
         self.assertIn('metric_lineage_table', pipeline['result_accuracy_summary'])
         self.assertIn('approval_workflow', pipeline['result_accuracy_summary'])
+        self.assertIn('opportunities_table', pipeline['evolution_summary'])
+        self.assertIn('proposal_queue_table', pipeline['evolution_summary'])
+        self.assertIn('goal_profile', pipeline['evolution_summary'])
+        self.assertIn('goal_rationale', pipeline['evolution_summary'])
+        self.assertIn('validation_recommendations_table', pipeline['evolution_summary'])
+        self.assertIn('drift_alerts_table', pipeline['evolution_summary'])
+        self.assertIn('field_remediation_table', pipeline['evolution_summary'])
+        self.assertIn('family_intelligence_table', pipeline['evolution_summary'])
+        self.assertIn('semantic_learning_table', pipeline['evolution_summary'])
+        self.assertIn('outcome_feedback_summary', pipeline['evolution_summary'])
+        self.assertIn('backlog_summary_table', pipeline['evolution_summary'])
+        self.assertIn('drift_history_table', pipeline['evolution_summary'])
+        self.assertGreaterEqual(int(pipeline['evolution_summary'].get('opportunity_count', 0)), 1)
 
     def test_run_analysis_pipeline_honors_manual_semantic_overrides(self):
         data = pd.DataFrame(
@@ -285,6 +308,7 @@ class PipelineFoundationTests(unittest.TestCase):
         accuracy = pipeline['result_accuracy_summary']
         self.assertEqual(accuracy['benchmark_profile']['profile_name'], 'Pilot Benchmark Pack')
         self.assertEqual(accuracy['approval_workflow']['mapping_status'], 'Approved')
+        self.assertEqual(accuracy['approval_workflow']['release_signoff_status'], 'Pending')
         self.assertFalse(accuracy['metric_lineage_table'].empty)
 
     def test_finalize_runtime_pipeline_adds_runtime_views(self):
@@ -397,6 +421,167 @@ class PipelineFoundationTests(unittest.TestCase):
         self.assertTrue(pipeline['analysis_trust_summary'].get('timeout_fallback'))
         self.assertNotEqual(pipeline['analysis_trust_summary'].get('trust_level'), 'High')
         self.assertIn('timeout fallback', ' '.join(pipeline['analysis_trust_summary'].get('notes', [])).lower())
+
+    def test_outcome_feedback_is_recorded_per_dataset_family(self):
+        updated = record_outcome_feedback(
+            {'family_memory': {'encounter-family': {'observation_count': 2}}},
+            dataset_family_key='encounter-family',
+            dataset_name='family-run.csv',
+            feedback='Helpful',
+            surface='Insights and export workflow',
+            notes='The executive summary was useful.',
+            reviewer='Analyst',
+        )
+
+        feedback = updated['family_memory']['encounter-family']['outcome_feedback']
+        self.assertEqual(len(feedback), 1)
+        self.assertEqual(feedback[0]['feedback'], 'Helpful')
+        self.assertEqual(feedback[0]['reviewer'], 'Analyst')
+
+    def test_append_review_history_keeps_auditable_entries(self):
+        review_store = append_review_history(
+            {'dataset-1': {'mapping_status': 'Pending'}},
+            dataset_identifier='dataset-1',
+            reviewer='Dana',
+            reviewer_role='Data Steward',
+            action='Release blocker',
+            status='Blocked',
+            notes='Readmission export needs stronger trust before release.',
+        )
+
+        history = review_store['dataset-1']['review_history']
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]['reviewer'], 'Dana')
+        self.assertEqual(history[0]['status'], 'Blocked')
+
+    def test_release_readiness_summary_surfaces_backlog_and_reviews(self):
+        summary = build_release_readiness_summary(
+            execution_queue=[
+                {
+                    'proposal_title': 'Release validation follow-up',
+                    'priority': 'High',
+                    'status': 'Queued',
+                    'release_gate_status': 'Required before release',
+                }
+            ],
+            review_history=[
+                {
+                    'reviewer': 'Dana',
+                    'action': 'Release blocker',
+                    'status': 'Blocked',
+                }
+            ],
+            approval_workflow={
+                'mapping_status': 'Approved',
+                'trust_gate_status': 'Approved',
+                'export_eligibility_status': 'Pending',
+                'release_signoff_status': 'Blocked',
+            },
+        )
+
+        self.assertFalse(summary.empty)
+        self.assertIn('Adaptive backlog', summary['checkpoint'].tolist())
+        self.assertIn('Latest governance action', summary['checkpoint'].tolist())
+
+    def test_execution_autopilot_surfaces_and_applies_safe_actions(self):
+        queue = [
+            {
+                'proposal_title': 'Release validation follow-up',
+                'proposal_type': 'Validation plan',
+                'priority': 'High',
+                'status': 'Queued',
+                'owner': 'Unassigned',
+                'due_state': 'Next review',
+                'release_gate_status': 'Required before release',
+                'dataset_name': 'demo.csv',
+                'dataset_family_key': 'encounter-family',
+            }
+        ]
+        proposals = pd.DataFrame(
+            [
+                {
+                    'proposal_title': 'Trust strengthening upgrade',
+                    'proposal_type': 'Adaptive spec',
+                    'priority': 'High',
+                    'proposed_change': 'Improve native-source trust before broader reporting.',
+                    'suggested_validation': 'Release validation',
+                }
+            ]
+        )
+        validations = pd.DataFrame(
+            [
+                {
+                    'validation': 'Full validation',
+                    'priority': 'High',
+                    'why': 'Promote sampled work into a full run.',
+                }
+            ]
+        )
+
+        actions = build_execution_autopilot_actions(queue, proposals, validations)
+
+        self.assertIn('Queue high-priority proposals', actions['action'].tolist())
+        self.assertIn('Start release blockers', actions['action'].tolist())
+        self.assertIn('Assign high-priority items', actions['action'].tolist())
+
+        updated = apply_execution_autopilot(
+            queue,
+            action_name='Assign high-priority items',
+            proposals=proposals,
+            validation_recommendations=validations,
+            dataset_name='demo.csv',
+            dataset_family_key='encounter-family',
+            default_owner='Data Steward',
+        )
+        self.assertEqual(updated[0]['owner'], 'Data Steward')
+
+        updated = apply_execution_autopilot(
+            updated,
+            action_name='Start release blockers',
+            proposals=proposals,
+            validation_recommendations=validations,
+            dataset_name='demo.csv',
+            dataset_family_key='encounter-family',
+        )
+        self.assertEqual(updated[0]['status'], 'In progress')
+        self.assertEqual(updated[0]['due_state'], 'Before release')
+
+    def test_dataset_version_diff_detects_schema_and_type_changes(self):
+        current = {
+            'row_count': 120,
+            'column_count': 4,
+            'file_size_mb': 1.4,
+            'metadata_json': {
+                'source_columns': ['patient_id', 'visit_date', 'los', 'acuity'],
+                'source_dtypes': {
+                    'patient_id': 'object',
+                    'visit_date': 'datetime64[ns]',
+                    'los': 'int64',
+                    'acuity': 'object',
+                },
+            },
+        }
+        previous = {
+            'row_count': 100,
+            'column_count': 3,
+            'file_size_mb': 1.1,
+            'metadata_json': {
+                'source_columns': ['patient_id', 'visit_date', 'los'],
+                'source_dtypes': {
+                    'patient_id': 'object',
+                    'visit_date': 'object',
+                    'los': 'float64',
+                },
+            },
+        }
+
+        diff = build_dataset_version_diff(current, previous)
+
+        self.assertFalse(diff['summary_table'].empty)
+        self.assertEqual(diff['added_columns_table'].iloc[0]['column_name'], 'acuity')
+        dtype_changes = diff['dtype_changes_table']
+        self.assertIn('visit_date', dtype_changes['column_name'].tolist())
+        self.assertIn('los', dtype_changes['column_name'].tolist())
 
 
 if __name__ == '__main__':

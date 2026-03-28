@@ -32,6 +32,7 @@ Real-world healthcare and operational datasets are rarely clean, fully mapped, o
 - Semantic mapping and healthcare-aware field inference
 - Data quality review, remediation guidance, and governance support
 - Healthcare analytics including:
+  - claims validation and utilization intelligence
   - risk segmentation
   - readmission-focused analytics
   - cohort builder and cohort monitoring
@@ -86,13 +87,15 @@ The app keeps a modular Python architecture built around a single Streamlit entr
 - `src/readiness_engine.py`
   - readiness activation and scoring
 - `src/healthcare_analysis.py`
-  - healthcare analytics modules and pathway/readmission/risk logic
+  - healthcare analytics modules and pathway/readmission/risk/claims logic
 - `src/modeling_studio.py`
   - modeling, model comparison, fairness, explainability
 - `src/decision_support.py`
   - executive summaries, benchmarking, scenarios, recommendations, prioritized insights
 - `src/export_utils.py`
   - report builders, governance/compliance exports, manifest helpers
+- `src/reports/claims_reports.py`
+  - claims QC summaries, issue logs, utilization metrics, and markdown handoff reports
 - `src/presentation_support.py`
   - executive report pack, print-friendly outputs, run history, governance summary
 - `src/portfolio_support.py`
@@ -103,6 +106,7 @@ The app keeps a modular Python architecture built around a single Streamlit entr
 The repository includes built-in demo datasets so the app can be explored immediately:
 
 - `Healthcare Operations Demo`
+- `Healthcare Claims Demo`
 - `Hospital Reporting Demo`
 - `Generic Business Demo`
 
@@ -112,6 +116,49 @@ These are good for:
 - Streamlit deployment demos
 - explaining native vs synthetic support
 - showing how module readiness changes with dataset structure
+
+## Claims Validation & Utilization Engine
+
+This module extends Clinverity into payer and claims-style healthcare analytics without breaking the app's existing schema-flexible design.
+
+### Business problem
+
+Claims files are often structurally usable but operationally risky: duplicate claim IDs, missing service dates, mismatched billed/allowed/paid amounts, and unclear payer or provider concentration can all weaken downstream reporting. Analysts need a workflow that validates the file and then immediately turns it into interpretable utilization signals.
+
+### What this module validates
+
+- claim and member identity coverage
+- duplicate claim submissions or repeated claim rows
+- service-date completeness
+- missing billed, allowed, and paid financial fields
+- negative payment values
+- financial integrity mismatches such as `paid_amount > allowed_amount` and `allowed_amount > billed_amount`
+
+### Utilization insights included
+
+- payer-level claim and payment concentration
+- provider-level utilization summaries
+- diagnosis-level utilization summaries
+- monthly claims trend snapshots
+- flagged-claims review table for high-priority follow-up
+
+### Example outputs
+
+- `qc_summary.csv`
+- `claims_validation_issue_log.csv`
+- `utilization_metrics.csv`
+- `claims_validation_report.md`
+
+### Why this strengthens Clinverity
+
+The claims workflow makes the platform more credible for healthcare payer, revenue integrity, and operational analytics use cases. It gives recruiters and stakeholders a concrete example of healthcare claims QC, utilization review, and governed report generation inside the same product surface as readiness, remediation, and export workflows.
+
+### Resume-ready project bullets
+
+- Built a healthcare Claims Validation & Utilization Engine inside Clinverity to validate claim integrity, surface payer/provider concentration, and generate recruiter-ready report artifacts.
+- Added a claims-focused demo dataset with realistic member, claim, provider, diagnosis, and financial fields plus intentional integrity issues for interview-friendly walkthroughs.
+- Extended the governed Export Center with claims-specific CSV and markdown outputs, including QC summaries, issue logs, utilization metrics, and a plain-English validation report.
+- Preserved the existing modular architecture by implementing claims logic in reusable analytics and report modules with regression coverage and validation automation.
 
 ## Synthetic support explanation
 

@@ -955,8 +955,10 @@ def render_app_header(
     subtitle: str = BRAND_SUBTITLE,
     tagline: str = BRAND_TAGLINE,
     context_items: list[tuple[str, str]] | None = None,
+    build_label: str = '',
 ) -> None:
     cards_html = ''
+    build_html = ''
     if context_items:
         cards = []
         for label, value in context_items:
@@ -967,10 +969,13 @@ def render_app_header(
                 "</div>"
             )
         cards_html = f"<div class='clinverity-context-grid'>{''.join(cards)}</div>"
+    if str(build_label).strip():
+        build_html = f"<div class='clinverity-hero-build'>{escape(build_label)}</div>"
     st.markdown(
         (
             "<section class='clinverity-hero'>"
             "<div class='clinverity-hero-eyebrow'>Clinical data quality platform</div>"
+            f"{build_html}"
             f"<div class='clinverity-hero-title'>{escape(title)}</div>"
             f"<div class='clinverity-hero-subtitle'>{escape(subtitle)}</div>"
             f"<div class='clinverity-hero-tagline'>{escape(tagline)}</div>"
@@ -987,7 +992,16 @@ def render_sidebar_brand(
     workspace_name: str = 'Guest Demo Workspace',
     source_mode: str = 'Demo mode',
     version_note: str = 'Clinverity pilot workspace',
+    build_label: str = '',
 ) -> None:
+    build_meta_html = ''
+    if str(build_label).strip():
+        build_meta_html = (
+            "<div class='clinverity-sidebar-meta-item'>"
+            "<div class='clinverity-sidebar-meta-label'>Build</div>"
+            f"<div class='clinverity-sidebar-meta-value'>{escape(build_label)}</div>"
+            "</div>"
+        )
     sidebar.markdown(
         (
             "<section class='clinverity-sidebar-brand'>"
@@ -1008,6 +1022,7 @@ def render_sidebar_brand(
             "<div class='clinverity-sidebar-meta-label'>Platform</div>"
             f"<div class='clinverity-sidebar-meta-value'>{escape(version_note)}</div>"
             "</div>"
+            f"{build_meta_html}"
             "</div>"
             "</section>"
         ),

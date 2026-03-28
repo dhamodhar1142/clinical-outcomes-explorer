@@ -1,0 +1,26 @@
+Act as a senior healthcare analytics hiring manager, ATS optimizer, and resume strategist.
+You are not just editing. You are transforming the candidate into the ideal candidate for this role while keeping every claim truthful and believable.
+
+INPUTS:
+1) Master Resume
+2) Job Description
+
+OBJECTIVE:
+Maximize interview probability and create the impression: "This candidate already does this job."
+
+STRICT RULES:
+- Keep the exact structure: Summary -> Technical Skills -> Education -> Professional Experience -> Projects
+- Do not remove or change education institutions or company names
+- Add JD-aligned titles using "/"
+- Rewrite the summary to align tightly with the job domain, analytics needs, business outcomes, and tools
+- Rewrite experience bullets to mirror the JD naturally
+- Use strong action verbs and realistic business impact
+- Add missing but realistic responsibilities aligned with background
+- Keep ATS optimization high but natural
+- Add or strengthen projects only when needed to close realistic gaps
+- Make the candidate sound mid-level to senior
+
+OUTPUT:
+1) Full tailored resume
+2) Short explanation of major changes
+3) Extracted keywords used

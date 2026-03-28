@@ -10,6 +10,7 @@ import pandas as pd
 import src.auth as auth_module
 from src.export_utils import (
     build_audience_report_text,
+    build_claims_validation_report_markdown,
     build_generated_report_text,
     build_readmission_summary_text,
     build_text_report,
@@ -130,6 +131,12 @@ def build_report_text_output(
             dataset_name,
             healthcare.get('readmission', {}),
             action_recommendations,
+        )
+    if normalized_label == 'Claims Validation Report':
+        return build_claims_validation_report_markdown(
+            dataset_name,
+            overview,
+            healthcare.get('claims_validation_utilization', {}),
         )
     if normalized_label == 'Dataset Summary Report':
         return build_text_report(

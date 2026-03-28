@@ -64,6 +64,11 @@ def _persist_dataset_metadata(
                 'source_mode': source_meta.get('source_mode', 'unknown'),
                 'row_count': len(data),
                 'column_count': len(data.columns),
+                'source_columns': [str(column) for column in data.columns],
+                'source_dtypes': {
+                    str(column): str(dtype)
+                    for column, dtype in data.dtypes.items()
+                },
                 'file_size_mb': source_meta.get('file_size_mb', 0.0),
                 'description': source_meta.get('description', ''),
                 'best_for': source_meta.get('best_for', ''),
@@ -81,6 +86,11 @@ def _persist_dataset_metadata(
             'source_mode': source_meta.get('source_mode', 'unknown'),
             'row_count': len(data),
             'column_count': len(data.columns),
+            'source_columns': [str(column) for column in data.columns],
+            'source_dtypes': {
+                str(column): str(dtype)
+                for column, dtype in data.dtypes.items()
+            },
             'file_size_mb': source_meta.get('file_size_mb', 0.0),
             'description': source_meta.get('description', ''),
             'best_for': source_meta.get('best_for', ''),

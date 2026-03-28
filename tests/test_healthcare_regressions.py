@@ -9,6 +9,7 @@ from src.healthcare_analysis import (
     assess_healthcare_dataset,
     build_cohort_summary,
     care_pathway_view,
+    claims_validation_utilization_engine,
     clinical_outcome_benchmarks,
     length_of_stay_prediction,
     mortality_adverse_event_indicators,
@@ -61,6 +62,34 @@ def _sample_clinical_frame() -> tuple[pd.DataFrame, dict[str, str]]:
     return data, canonical
 
 
+def _sample_claims_frame() -> tuple[pd.DataFrame, dict[str, str]]:
+    data = pd.DataFrame(
+        {
+            'claim_id': ['C1', 'C2', 'C2', 'C4', 'C5', 'C6'],
+            'member_id': ['M1', 'M1', 'M2', 'M3', 'M4', None],
+            'service_date': pd.to_datetime(['2025-01-05', '2025-01-18', '2025-01-18', '2025-02-03', '2025-02-12', '2025-03-01']),
+            'payer': ['Aetna', 'Aetna', 'Blue', 'Blue', 'Cigna', 'Aetna'],
+            'provider_name': ['North Clinic', 'North Clinic', 'East Medical', 'East Medical', 'West Health', 'North Clinic'],
+            'diagnosis_code': ['I10', 'E11', 'E11', 'J45', 'I10', 'M54'],
+            'paid_amount': [120.0, 180.0, 250.0, -20.0, 90.0, 300.0],
+            'allowed_amount': [150.0, 170.0, 200.0, 0.0, 100.0, 250.0],
+            'billed_amount': [200.0, 210.0, 220.0, 50.0, 110.0, 275.0],
+        }
+    )
+    canonical = {
+        'claim_id': 'claim_id',
+        'member_id': 'member_id',
+        'service_date': 'service_date',
+        'payer': 'payer',
+        'provider_name': 'provider_name',
+        'diagnosis_code': 'diagnosis_code',
+        'paid_amount': 'paid_amount',
+        'allowed_amount': 'allowed_amount',
+        'billed_amount': 'billed_amount',
+    }
+    return data, canonical
+
+
 class HealthcareRegressionTests(unittest.TestCase):
     def test_assess_healthcare_dataset_recognizes_encounter_workflow_schema(self) -> None:
         canonical = {
@@ -78,6 +107,54 @@ class HealthcareRegressionTests(unittest.TestCase):
         self.assertGreaterEqual(float(result.get('healthcare_readiness_score', 0.0)), 0.6)
         self.assertEqual(result.get('likely_dataset_type'), 'Encounter-oriented healthcare dataset')
         self.assertEqual(result.get('synthetic_supported_healthcare_fields'), [])
+
+    def test_claims_validation_utilization_engine_returns_claims_quality_and_trend_outputs(self) -> None:
+        data, canonical = _sample_claims_frame()
+        result = claims_validation_utilization_engine(data, canonical)
+        self.assertTrue(result.get('available'))
+        self.assertEqual(result.get('workflow_title'), 'Healthcare Claims Validation & Utilization Engine')
+        self.assertIn(result.get('readiness_label'), {'Review needed', 'High risk'})
+        self.assertFalse(result.get('validation_table', pd.DataFrame()).empty)
+        self.assertFalse(result.get('financial_summary', pd.DataFrame()).empty)
+        self.assertFalse(result.get('payer_utilization', pd.DataFrame()).empty)
+        self.assertFalse(result.get('provider_utilization', pd.DataFrame()).empty)
+        self.assertFalse(result.get('monthly_utilization', pd.DataFrame()).empty)
+        self.assertFalse(result.get('diagnosis_utilization', pd.DataFrame()).empty)
+        self.assertFalse(result.get('flagged_rows', pd.DataFrame()).empty)
+        self.assertIn('claim_validation_flags', result['flagged_rows'].columns)
+        self.assertIn('Duplicate claim rows', set(result['validation_table']['check'].astype(str)))
+        self.assertIn('Paid exceeds allowed', set(result['validation_table']['check'].astype(str)))
+
+    def test_claims_validation_utilization_engine_falls_back_for_non_claims_dataset(self) -> None:
+        generic = pd.DataFrame(
+            {
+                'customer_id': ['C1', 'C2', 'C3'],
+                'region': ['North', 'South', 'East'],
+                'revenue': [100.0, 150.0, 200.0],
+            }
+        )
+        result = claims_validation_utilization_engine(generic, {'entity_id': 'customer_id'})
+        self.assertFalse(result.get('available'))
+        self.assertIn('claim/member identity', result.get('reason', ''))
+
+    def test_claims_validation_utilization_engine_handles_partial_claims_schema_gracefully(self) -> None:
+        partial = pd.DataFrame(
+            {
+                'claim_id': ['C1', 'C2', 'C3'],
+                'payer': ['Aetna', 'Blue', 'Cigna'],
+                'paid_amount': [100.0, 120.0, 130.0],
+            }
+        )
+        result = claims_validation_utilization_engine(
+            partial,
+            {
+                'claim_id': 'claim_id',
+                'payer': 'payer',
+                'paid_amount': 'paid_amount',
+            },
+        )
+        self.assertFalse(result.get('available'))
+        self.assertIn('claim/member identity', result.get('reason', ''))
 
     def test_expanded_clinical_analytics_are_available_for_healthcare_dataset(self) -> None:
         data, canonical = _sample_clinical_frame()
@@ -347,6 +424,8 @@ class HealthcareRegressionTests(unittest.TestCase):
             'event_date': 'event_date',
         }
         result = run_healthcare_analysis(generic, canonical)
+        self.assertIn('claims_validation_utilization', result)
+        self.assertFalse(result['claims_validation_utilization'].get('available'))
         self.assertIn('length_of_stay_prediction', result)
         self.assertFalse(result['length_of_stay_prediction'].get('available'))
         self.assertIn('mortality_adverse_events', result)
