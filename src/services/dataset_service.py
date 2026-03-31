@@ -240,6 +240,36 @@ def build_selection_from_active_bundle(
     return None
 
 
+def build_persistable_active_bundle(bundle: Any) -> dict[str, Any] | None:
+    if not isinstance(bundle, dict):
+        return None
+    source_mode = str(bundle.get('source_mode', '') or '').strip()
+    dataset_name = str(bundle.get('dataset_name', '') or '').strip()
+    if not source_mode or not dataset_name:
+        return None
+    persistable = {
+        'bundle_version': int(bundle.get('bundle_version', 2) or 2),
+        'active_status': str(bundle.get('active_status', 'active') or 'active'),
+        'source_mode': source_mode,
+        'dataset_name': dataset_name,
+        'original_lookup': dict(bundle.get('original_lookup') or {}),
+        'source_meta': dict(bundle.get('source_meta') or {}),
+    }
+    if source_mode == 'Uploaded dataset':
+        persistable.update(
+            {
+                'upload_file_name': str(bundle.get('upload_file_name', dataset_name) or dataset_name),
+                'upload_size_bytes': int(bundle.get('upload_size_bytes', 0) or 0),
+                'upload_status': str(bundle.get('upload_status', 'ready') or 'ready'),
+                'dataset_cache_key': str(bundle.get('dataset_cache_key', '') or ''),
+            }
+        )
+        artifact = bundle.get('upload_artifact')
+        if isinstance(artifact, dict):
+            persistable['upload_artifact'] = dict(artifact)
+    return persistable
+
+
 def inspect_excel_sheets(file_bytes: bytes, suffix: str) -> list[str]:
     return list_excel_sheets(file_bytes, suffix=suffix)
 
@@ -250,6 +280,11 @@ def load_primary_dataset_from_ui(
     ui: Any,
     session_state: dict[str, Any],
 ) -> PrimaryDatasetSelection:
+    active_bundle = session_state.get('active_dataset_bundle')
+    if 'dataset_source_mode' not in session_state and isinstance(active_bundle, dict):
+        bundle_source_mode = str(active_bundle.get('source_mode', '') or '').strip()
+        if bundle_source_mode in DATASET_SOURCE_OPTIONS:
+            session_state['dataset_source_mode'] = bundle_source_mode
     pending_source_mode = str(session_state.pop('pending_dataset_source_mode', '') or '').strip()
     if pending_source_mode in DATASET_SOURCE_OPTIONS:
         session_state['dataset_source_mode'] = pending_source_mode

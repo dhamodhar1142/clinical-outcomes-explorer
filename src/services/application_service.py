@@ -47,6 +47,8 @@ ACTIVE_CONTROL_KEYS = [
     'approval_routing_rules',
     'workflow_action_prompt',
     'demo_dataset_name',
+    'dataset_source_mode',
+    'persisted_active_dataset_bundle',
 ]
 
 PERSISTED_USER_SETTING_KEYS = [
@@ -80,6 +82,8 @@ PERSISTED_USER_SETTING_KEYS = [
     'export_runtime_preference',
     'governance_policy_packs',
     'approval_routing_rules',
+    'dataset_source_mode',
+    'persisted_active_dataset_bundle',
 ]
 
 

@@ -2,22 +2,25 @@
   "family_memory": {
     "hospital-encounters": {
       "family_label": "Hospital Encounter Feed",
-      "last_dataset_name": "SMALL_HEALTHCARE_VISITS.csv",
-      "observation_count": 17,
+      "last_dataset_name": "STG_EHP__VIST.csv",
+      "observation_count": 34,
       "pattern_counts": {
-        "Native-source dependence": 17,
-        "Semantic coverage": 17,
-        "External reporting safety": 17
+        "Native-source dependence": 34,
+        "Semantic coverage": 34,
+        "External reporting safety": 34,
+        "Trust strengthening": 15,
+        "Full-run promotion": 15
       },
-      "last_summary_text": "Clinverity is actively learning from the Hospital Encounter Feed pattern for SMALL_HEALTHCARE_VISITS.csv. Its primary goal for this dataset is readmission reduction analytics. It found 3 ranked improvement opportunities, 0 safe adaptive actions, and 3 draft upgrade proposals.",
+      "last_summary_text": "Clinverity is actively learning from the Hospital Encounter Feed pattern for STG_EHP__VIST.csv. Its primary goal for this dataset is release-grade validation. It found 5 ranked improvement opportunities, 1 safe adaptive actions, and 5 draft upgrade proposals.",
       "goal_counts": {
-        "Readmission reduction analytics": 15
+        "Readmission reduction analytics": 17,
+        "Release-grade validation": 15
       },
       "last_snapshot": {
         "readiness_score": 0.864375,
-        "trust_score": 0.85,
+        "trust_score": 0.67,
         "helper_columns_added": 11,
-        "goal_profile": "Readmission reduction analytics",
+        "goal_profile": "Release-grade validation",
         "total_source_columns": 21,
         "strongly_mapped_columns": 17,
         "blocked_reporting_module_count": 2,
@@ -143,11 +146,331 @@
           "helper_columns_added": 11,
           "blocked_reporting_module_count": 2,
           "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-28T13:48:10.886164+00:00",
+          "dataset_name": "STG_EHP__VIST.csv",
+          "goal_profile": "Release-grade validation",
+          "readiness_score": 0.864375,
+          "trust_score": 0.67,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-28T13:55:56.513426+00:00",
+          "dataset_name": "STG_EHP__VIST.csv",
+          "goal_profile": "Release-grade validation",
+          "readiness_score": 0.864375,
+          "trust_score": 0.67,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-28T14:01:01.473949+00:00",
+          "dataset_name": "STG_EHP__VIST.csv",
+          "goal_profile": "Release-grade validation",
+          "readiness_score": 0.864375,
+          "trust_score": 0.67,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-28T14:05:31.011501+00:00",
+          "dataset_name": "STG_EHP__VIST.csv",
+          "goal_profile": "Release-grade validation",
+          "readiness_score": 0.864375,
+          "trust_score": 0.67,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-28T14:09:48.783943+00:00",
+          "dataset_name": "STG_EHP__VIST.csv",
+          "goal_profile": "Release-grade validation",
+          "readiness_score": 0.864375,
+          "trust_score": 0.67,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-28T14:13:52.646994+00:00",
+          "dataset_name": "STG_EHP__VIST.csv",
+          "goal_profile": "Release-grade validation",
+          "readiness_score": 0.864375,
+          "trust_score": 0.67,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-28T14:16:40.923785+00:00",
+          "dataset_name": "STG_EHP__VIST.csv",
+          "goal_profile": "Release-grade validation",
+          "readiness_score": 0.864375,
+          "trust_score": 0.67,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-28T14:32:39.326328+00:00",
+          "dataset_name": "SMALL_HEALTHCARE_VISITS.csv",
+          "goal_profile": "Readmission reduction analytics",
+          "readiness_score": 0.864375,
+          "trust_score": 0.85,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-28T15:53:03.387637+00:00",
+          "dataset_name": "SMALL_HEALTHCARE_VISITS.csv",
+          "goal_profile": "Readmission reduction analytics",
+          "readiness_score": 0.864375,
+          "trust_score": 0.85,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-30T14:18:59.022373+00:00",
+          "dataset_name": "STG_EHP__VIST.csv",
+          "goal_profile": "Release-grade validation",
+          "readiness_score": 0.864375,
+          "trust_score": 0.67,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-31T12:16:27.765103+00:00",
+          "dataset_name": "STG_EHP__VIST.csv",
+          "goal_profile": "Release-grade validation",
+          "readiness_score": 0.864375,
+          "trust_score": 0.67,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-31T12:23:54.705518+00:00",
+          "dataset_name": "STG_EHP__VIST.csv",
+          "goal_profile": "Release-grade validation",
+          "readiness_score": 0.864375,
+          "trust_score": 0.67,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-31T12:32:00.819475+00:00",
+          "dataset_name": "STG_EHP__VIST.csv",
+          "goal_profile": "Release-grade validation",
+          "readiness_score": 0.864375,
+          "trust_score": 0.67,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-31T12:38:22.245265+00:00",
+          "dataset_name": "STG_EHP__VIST.csv",
+          "goal_profile": "Release-grade validation",
+          "readiness_score": 0.864375,
+          "trust_score": 0.67,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-31T12:44:07.945674+00:00",
+          "dataset_name": "STG_EHP__VIST.csv",
+          "goal_profile": "Release-grade validation",
+          "readiness_score": 0.864375,
+          "trust_score": 0.67,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-31T12:50:07.613661+00:00",
+          "dataset_name": "STG_EHP__VIST.csv",
+          "goal_profile": "Release-grade validation",
+          "readiness_score": 0.864375,
+          "trust_score": 0.67,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-31T12:54:01.067713+00:00",
+          "dataset_name": "STG_EHP__VIST.csv",
+          "goal_profile": "Release-grade validation",
+          "readiness_score": 0.864375,
+          "trust_score": 0.67,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 2,
+          "benchmark_profile": "Payer Claims"
         }
       ]
+    },
+    "generic-healthcare": {
+      "family_label": "Generic Healthcare Feed",
+      "last_dataset_name": "Healthcare Operations Demo",
+      "observation_count": 12,
+      "pattern_counts": {
+        "Semantic coverage": 12,
+        "Native-source dependence": 12,
+        "Trust strengthening": 5,
+        "Readiness uplift": 5,
+        "External reporting safety": 5,
+        "Full-run promotion": 5
+      },
+      "goal_counts": {
+        "Readmission reduction analytics": 7,
+        "Release-grade validation": 5
+      },
+      "run_history": [
+        {
+          "recorded_at": "2026-03-28T22:08:12.249151+00:00",
+          "dataset_name": "Healthcare Operations Demo",
+          "goal_profile": "Readmission reduction analytics",
+          "readiness_score": 0.865,
+          "trust_score": 0.9099999999999999,
+          "helper_columns_added": 17,
+          "blocked_reporting_module_count": 0,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-28T22:13:57.399177+00:00",
+          "dataset_name": "FY_2026_Hospital_Readmissions_Reduction_Program_Hospital.csv",
+          "goal_profile": "Release-grade validation",
+          "readiness_score": 0.546875,
+          "trust_score": 0.3700000000000001,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 3,
+          "benchmark_profile": "Hospital Encounters"
+        },
+        {
+          "recorded_at": "2026-03-28T22:14:37.389247+00:00",
+          "dataset_name": "FY_2026_Hospital_Readmissions_Reduction_Program_Hospital.csv",
+          "goal_profile": "Release-grade validation",
+          "readiness_score": 0.546875,
+          "trust_score": 0.3700000000000001,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 3,
+          "benchmark_profile": "Hospital Encounters"
+        },
+        {
+          "recorded_at": "2026-03-28T22:15:09.365305+00:00",
+          "dataset_name": "Healthcare Operations Demo",
+          "goal_profile": "Readmission reduction analytics",
+          "readiness_score": 0.865,
+          "trust_score": 0.9099999999999999,
+          "helper_columns_added": 17,
+          "blocked_reporting_module_count": 0,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-28T22:39:56.020817+00:00",
+          "dataset_name": "delivery_events.csv",
+          "goal_profile": "Release-grade validation",
+          "readiness_score": 0.565625,
+          "trust_score": 0.52,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 3,
+          "benchmark_profile": "Hospital Encounters"
+        },
+        {
+          "recorded_at": "2026-03-28T22:40:21.921334+00:00",
+          "dataset_name": "Healthcare Operations Demo",
+          "goal_profile": "Readmission reduction analytics",
+          "readiness_score": 0.865,
+          "trust_score": 0.9099999999999999,
+          "helper_columns_added": 17,
+          "blocked_reporting_module_count": 0,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-30T13:57:33.723983+00:00",
+          "dataset_name": "Healthcare Operations Demo",
+          "goal_profile": "Readmission reduction analytics",
+          "readiness_score": 0.865,
+          "trust_score": 0.9099999999999999,
+          "helper_columns_added": 17,
+          "blocked_reporting_module_count": 0,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-30T13:58:26.272704+00:00",
+          "dataset_name": "Healthcare Operations Demo",
+          "goal_profile": "Readmission reduction analytics",
+          "readiness_score": 0.865,
+          "trust_score": 0.9099999999999999,
+          "helper_columns_added": 17,
+          "blocked_reporting_module_count": 0,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-30T14:00:59.895105+00:00",
+          "dataset_name": "STG_EHP__TRTM.csv",
+          "goal_profile": "Release-grade validation",
+          "readiness_score": 0.2996875,
+          "trust_score": 0.3400000000000001,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 5,
+          "benchmark_profile": "Hospital Encounters"
+        },
+        {
+          "recorded_at": "2026-03-30T14:01:21.764581+00:00",
+          "dataset_name": "Healthcare Operations Demo",
+          "goal_profile": "Readmission reduction analytics",
+          "readiness_score": 0.865,
+          "trust_score": 0.9099999999999999,
+          "helper_columns_added": 17,
+          "blocked_reporting_module_count": 0,
+          "benchmark_profile": "Payer Claims"
+        },
+        {
+          "recorded_at": "2026-03-30T14:04:05.729406+00:00",
+          "dataset_name": "STG_EHP__TRTM.csv",
+          "goal_profile": "Release-grade validation",
+          "readiness_score": 0.2996875,
+          "trust_score": 0.3400000000000001,
+          "helper_columns_added": 11,
+          "blocked_reporting_module_count": 5,
+          "benchmark_profile": "Hospital Encounters"
+        },
+        {
+          "recorded_at": "2026-03-30T14:04:28.555936+00:00",
+          "dataset_name": "Healthcare Operations Demo",
+          "goal_profile": "Readmission reduction analytics",
+          "readiness_score": 0.865,
+          "trust_score": 0.9099999999999999,
+          "helper_columns_added": 17,
+          "blocked_reporting_module_count": 0,
+          "benchmark_profile": "Payer Claims"
+        }
+      ],
+      "last_snapshot": {
+        "readiness_score": 0.865,
+        "trust_score": 0.9099999999999999,
+        "helper_columns_added": 17,
+        "goal_profile": "Readmission reduction analytics",
+        "total_source_columns": 37,
+        "strongly_mapped_columns": 25,
+        "blocked_reporting_module_count": 0,
+        "benchmark_profile": "Payer Claims"
+      },
+      "last_summary_text": "Clinverity is actively learning from the Generic Healthcare Feed pattern for Healthcare Operations Demo. Its primary goal for this dataset is readmission reduction analytics. It found 2 ranked improvement opportunities, 0 safe adaptive actions, and 2 draft upgrade proposals."
     }
   },
-  "last_dataset_name": "SMALL_HEALTHCARE_VISITS.csv",
+  "last_dataset_name": "STG_EHP__VIST.csv",
   "last_family_key": "hospital-encounters",
   "execution_queue": [
     {
@@ -179,6 +502,97 @@
       "dataset_name": "SMALL_HEALTHCARE_VISITS.csv",
       "dataset_family_key": "hospital-encounters",
       "status": "Queued"
+    },
+    {
+      "proposal_title": "Trust strengthening upgrade",
+      "proposal_type": "Adaptive spec",
+      "priority": "Medium",
+      "proposed_change": "Use the trust notes and support-type gaps as the next hardening backlog.",
+      "suggested_validation": "Feed repeated trust gaps into future benchmark and reporting defaults.",
+      "dataset_name": "STG_EHP__VIST.csv",
+      "dataset_family_key": "hospital-encounters",
+      "status": "Queued",
+      "owner": "Unassigned",
+      "due_state": "Planned",
+      "release_gate_status": "Advisory"
+    },
+    {
+      "proposal_title": "Full-run promotion upgrade",
+      "proposal_type": "Adaptive spec",
+      "priority": "Medium",
+      "proposed_change": "Promote this dataset to a full local or release validation run before final distribution.",
+      "suggested_validation": "Automatically flag sampled datasets for later full-run confirmation.",
+      "dataset_name": "STG_EHP__VIST.csv",
+      "dataset_family_key": "hospital-encounters",
+      "status": "Queued",
+      "owner": "Unassigned",
+      "due_state": "Planned",
+      "release_gate_status": "Required before release"
+    },
+    {
+      "proposal_title": "Semantic coverage upgrade",
+      "proposal_type": "Adaptive spec",
+      "priority": "High",
+      "proposed_change": "Confirm the important unresolved fields and save them as a reusable dataset-family mapping profile.",
+      "suggested_validation": "Promote approved manual mappings into future auto-suggestions.",
+      "dataset_name": "Healthcare Operations Demo",
+      "dataset_family_key": "generic-healthcare",
+      "status": "Queued",
+      "owner": "Unassigned",
+      "due_state": "Next review",
+      "release_gate_status": "Advisory"
+    },
+    {
+      "proposal_title": "Native-source dependence upgrade",
+      "proposal_type": "Adaptive spec",
+      "priority": "High",
+      "proposed_change": "Target helper-backed concepts first when refining schema mapping or upstream extracts.",
+      "suggested_validation": "Keep ranking future work by helper dependence and trust impact.",
+      "dataset_name": "Healthcare Operations Demo",
+      "dataset_family_key": "generic-healthcare",
+      "status": "Queued",
+      "owner": "Unassigned",
+      "due_state": "Next review",
+      "release_gate_status": "Advisory"
+    },
+    {
+      "proposal_title": "Trust strengthening upgrade",
+      "proposal_type": "Adaptive spec",
+      "priority": "High",
+      "proposed_change": "Use the trust notes and support-type gaps as the next hardening backlog.",
+      "suggested_validation": "Feed repeated trust gaps into future benchmark and reporting defaults.",
+      "dataset_name": "FY_2026_Hospital_Readmissions_Reduction_Program_Hospital.csv",
+      "dataset_family_key": "generic-healthcare",
+      "status": "Queued",
+      "owner": "Unassigned",
+      "due_state": "Next review",
+      "release_gate_status": "Advisory"
+    },
+    {
+      "proposal_title": "Readiness uplift upgrade",
+      "proposal_type": "Adaptive spec",
+      "priority": "Medium",
+      "proposed_change": "Address the top blockers before relying on broader analytics and export workflows.",
+      "suggested_validation": "Build a ranked backlog of blockers by module unlock value.",
+      "dataset_name": "FY_2026_Hospital_Readmissions_Reduction_Program_Hospital.csv",
+      "dataset_family_key": "generic-healthcare",
+      "status": "Queued",
+      "owner": "Unassigned",
+      "due_state": "Planned",
+      "release_gate_status": "Advisory"
+    },
+    {
+      "proposal_title": "External reporting safety upgrade",
+      "proposal_type": "Adaptive spec",
+      "priority": "Medium",
+      "proposed_change": "Review the module-level reporting gates before approving outward-facing deliverables.",
+      "suggested_validation": "Turn repeated gate failures into approval defaults and checklist policy.",
+      "dataset_name": "FY_2026_Hospital_Readmissions_Reduction_Program_Hospital.csv",
+      "dataset_family_key": "generic-healthcare",
+      "status": "Queued",
+      "owner": "Unassigned",
+      "due_state": "Planned",
+      "release_gate_status": "Advisory"
     }
   ]
 }

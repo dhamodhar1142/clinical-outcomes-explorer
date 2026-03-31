@@ -144,6 +144,7 @@ def initialize_app_session_state(session_state: dict[str, Any]) -> RuntimeServic
         'job_runs': [],
         'profile_cache_metrics': default_profile_cache_metrics(),
         'active_dataset_bundle': None,
+        'persisted_active_dataset_bundle': None,
         'semantic_mapping_overrides_by_dataset': {},
         'latest_dataset_artifact': None,
         'pending_uploaded_dataset_state': None,
@@ -153,6 +154,13 @@ def initialize_app_session_state(session_state: dict[str, Any]) -> RuntimeServic
     for key, value in defaults.items():
         session_state.setdefault(key, value)
     services.application_service.hydrate_workspace_state(session_state)
+    persisted_bundle = session_state.get('persisted_active_dataset_bundle')
+    if session_state.get('active_dataset_bundle') is None and isinstance(persisted_bundle, dict):
+        session_state['active_dataset_bundle'] = dict(persisted_bundle)
+    if 'dataset_source_mode' not in session_state and isinstance(persisted_bundle, dict):
+        bundle_source_mode = str(persisted_bundle.get('source_mode', '') or '').strip()
+        if bundle_source_mode in {'Built-in example dataset', 'Uploaded dataset'}:
+            session_state['dataset_source_mode'] = bundle_source_mode
     return services
 
 

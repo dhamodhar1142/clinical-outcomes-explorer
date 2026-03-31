@@ -259,6 +259,11 @@ def _store_active_dataset_bundle(dataset_selection, *, source_meta_override: dic
     st.session_state['active_dataset_bundle'] = {
         **active_bundle,
     }
+    persistable_bundle = _get_dataset_service_module().build_persistable_active_bundle(active_bundle)
+    st.session_state['persisted_active_dataset_bundle'] = persistable_bundle
+    application_service = st.session_state.get('application_service')
+    if application_service is not None:
+        application_service.persist_user_settings(st.session_state)
 
 
 def _load_cached_dataset_selection():
