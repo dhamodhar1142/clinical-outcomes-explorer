@@ -33,10 +33,22 @@ ACTIVE_CONTROL_KEYS = [
     'organization_benchmark_packs',
     'semantic_mapping_profiles',
     'dataset_review_approvals',
+    'product_evolution_mode',
+    'evolution_memory',
+    'evolution_execution_queue',
     'active_plan',
     'plan_enforcement_mode',
+    'governance_default_owner',
+    'governance_default_reviewer_role',
+    'governance_release_gate_mode',
+    'validation_runtime_preference',
+    'export_runtime_preference',
+    'governance_policy_packs',
+    'approval_routing_rules',
     'workflow_action_prompt',
     'demo_dataset_name',
+    'dataset_source_mode',
+    'persisted_active_dataset_bundle',
 ]
 
 PERSISTED_USER_SETTING_KEYS = [
@@ -52,6 +64,9 @@ PERSISTED_USER_SETTING_KEYS = [
     'organization_benchmark_packs',
     'semantic_mapping_profiles',
     'dataset_review_approvals',
+    'product_evolution_mode',
+    'evolution_memory',
+    'evolution_execution_queue',
     'active_plan',
     'plan_enforcement_mode',
     'product_large_dataset_profile',
@@ -60,6 +75,15 @@ PERSISTED_USER_SETTING_KEYS = [
     'workspace_governance_redaction_level',
     'workspace_governance_export_access',
     'workspace_governance_watermark_sensitive_exports',
+    'governance_default_owner',
+    'governance_default_reviewer_role',
+    'governance_release_gate_mode',
+    'validation_runtime_preference',
+    'export_runtime_preference',
+    'governance_policy_packs',
+    'approval_routing_rules',
+    'dataset_source_mode',
+    'persisted_active_dataset_bundle',
 ]
 
 
@@ -196,7 +220,7 @@ class WorkspaceApplicationService:
         if not settings:
             return
         for key in PERSISTED_USER_SETTING_KEYS:
-            if key in settings and key not in session_state:
+            if key in settings:
                 session_state[key] = settings[key]
 
     def persist_user_settings(self, session_state: dict[str, Any]) -> None:

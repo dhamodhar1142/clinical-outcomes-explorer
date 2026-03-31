@@ -17,6 +17,7 @@ from src.decision_support import (
     build_scenario_simulation_studio,
 )
 from src.enterprise_features import build_data_lineage_view, build_quality_rule_engine
+from src.evolution_engine import build_evolution_summary
 from src.healthcare_analysis import run_healthcare_analysis
 from src.insights_engine import build_action_recommendations, build_automated_insight_board, build_key_insights
 from src.ops_hardening import build_performance_diagnostics
@@ -427,6 +428,19 @@ def run_analysis_pipeline(
         trust_summary=analysis_trust_summary,
         active_control_values=active_control_values,
     )
+    evolution_summary = build_evolution_summary(
+        dataset_name=dataset_name,
+        source_meta=source_meta,
+        structure=structure,
+        semantic=semantic,
+        readiness=readiness,
+        healthcare=healthcare,
+        trust_summary=analysis_trust_summary,
+        accuracy_summary=result_accuracy_summary,
+        overview=overview,
+        sample_info=sample_info,
+        active_control_values=active_control_values,
+    )
     lineage = build_data_lineage_view(
         dataset_name,
         source_meta,
@@ -586,6 +600,7 @@ def run_analysis_pipeline(
         'compliance_governance_summary': compliance_governance_summary,
         'dataset_intelligence': dataset_intelligence,
         'result_accuracy_summary': result_accuracy_summary,
+        'evolution_summary': evolution_summary,
         'executive_report_pack': executive_report_pack,
         'printable_reports': printable_reports,
         'stakeholder_export_bundle': stakeholder_bundle,

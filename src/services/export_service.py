@@ -573,6 +573,7 @@ def generate_export_report_output(
         'Analyst Report': 'Analyst Report',
         'Data Readiness Report': 'Data Readiness Review',
         'Clinical Summary': 'Clinical Report',
+        'Claims Validation Report': 'Operational Report',
         'Readmission Report': 'Clinical Report',
         'Dataset Summary Report': 'Analyst Report',
     }

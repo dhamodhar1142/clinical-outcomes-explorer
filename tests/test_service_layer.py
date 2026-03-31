@@ -8,7 +8,7 @@ import pandas as pd
 from src.services.copilot_service import execute_copilot_prompt, plan_copilot_workflow
 from src.services.admin_ops_service import build_admin_ops_service
 from src.services.application_service import build_workspace_application_service
-from src.services.dataset_service import build_uploaded_dataset_bundle, load_primary_dataset_from_ui
+from src.services.dataset_service import build_persistable_active_bundle, build_uploaded_dataset_bundle, load_primary_dataset_from_ui
 from src.services.export_service import generate_export_report_output, prepare_policy_aware_export_bundle
 from src.services.job_service import read_background_task, submit_background_task
 from src.services.report_service import generate_report_deliverable
@@ -23,6 +23,76 @@ from src.services.workspace_service import (
 
 
 class ServiceLayerTests(unittest.TestCase):
+    def test_dataset_service_restores_uploaded_source_mode_from_active_bundle(self) -> None:
+        class _Sidebar:
+            def caption(self, *_args, **_kwargs):
+                return None
+
+            def markdown(self, *_args, **_kwargs):
+                return None
+
+            def info(self, *_args, **_kwargs):
+                return None
+
+            def radio(self, _label, options, key=None):
+                return self.session_state.get(key, options[0])
+
+            def file_uploader(self, *_args, **_kwargs):
+                return None
+
+            def __init__(self, session_state):
+                self.session_state = session_state
+
+        class _Ui:
+            def info(self, *_args, **_kwargs):
+                return None
+
+        data = pd.DataFrame([{'patient_id': 1, 'encounter_id': 'E1'}])
+        active_bundle = {
+            'source_mode': 'Uploaded dataset',
+            'data': data,
+            'original_lookup': {'patient_id': 'PAT_ID', 'encounter_id': 'MEDT_ID'},
+            'dataset_name': 'persisted-upload.csv',
+            'source_meta': {'source_mode': 'Uploaded dataset', 'dataset_cache_key': 'abc123'},
+        }
+        session_state = {
+            'active_dataset_bundle': active_bundle,
+            'application_service': None,
+            'persistence_service': None,
+            'storage_service': None,
+            'workspace_identity': {},
+        }
+
+        selection = load_primary_dataset_from_ui(
+            sidebar=_Sidebar(session_state),
+            ui=_Ui(),
+            session_state=session_state,
+        )
+
+        self.assertEqual(session_state['dataset_source_mode'], 'Uploaded dataset')
+        self.assertEqual(selection.source_mode, 'Uploaded dataset')
+        self.assertEqual(selection.dataset_name, 'persisted-upload.csv')
+
+    def test_dataset_service_builds_lightweight_persistable_bundle(self) -> None:
+        bundle = {
+            'bundle_version': 2,
+            'active_status': 'active',
+            'source_mode': 'Uploaded dataset',
+            'data': pd.DataFrame([{'patient_id': 1}]),
+            'original_lookup': {'patient_id': 'PAT_ID'},
+            'dataset_name': 'persisted-upload.csv',
+            'source_meta': {'source_mode': 'Uploaded dataset', 'dataset_cache_key': 'abc123'},
+            'upload_file_name': 'persisted-upload.csv',
+            'upload_size_bytes': 128,
+            'upload_artifact': {'relative_path': 'uploads/persisted-upload.csv'},
+        }
+
+        persistable = build_persistable_active_bundle(bundle)
+
+        self.assertNotIn('data', persistable)
+        self.assertEqual(persistable['source_mode'], 'Uploaded dataset')
+        self.assertEqual(persistable['upload_artifact']['relative_path'], 'uploads/persisted-upload.csv')
+
     def test_application_service_coordinates_persistence_metadata_and_history(self) -> None:
         class _PersistenceService:
             enabled = True
@@ -98,6 +168,67 @@ class ServiceLayerTests(unittest.TestCase):
         self.assertEqual(controls['analysis_template'], 'General Review')
         self.assertEqual(demo_config['executive_summary_verbosity'], 'Concise')
         self.assertEqual(session_state['run_history'], updated)
+
+    def test_application_service_hydrates_persisted_settings_over_defaults(self) -> None:
+        class _PersistenceService:
+            enabled = True
+
+            def load_user_settings(self, identity):
+                return {
+                    'accuracy_benchmark_profile': 'Hospital Encounters',
+                    'evolution_execution_queue': [{'proposal_title': 'Queued item'}],
+                    'governance_default_owner': 'Data Steward',
+                    'validation_runtime_preference': 'Prefer local/staging for heavy actions',
+                    'approval_routing_rules': {'release_signoff': 'Admin'},
+                    'governance_policy_packs': {'Enterprise Release Controls': {'export_policy_name': 'Internal Review'}},
+                    'dataset_source_mode': 'Uploaded dataset',
+                    'persisted_active_dataset_bundle': {'source_mode': 'Uploaded dataset', 'dataset_name': 'persisted-upload.csv'},
+                }
+
+            def save_user_settings(self, identity, settings):
+                return None
+
+        application_service = build_workspace_application_service(_PersistenceService())
+        session_state = {
+            'workspace_identity': {'workspace_id': 'workspace-a', 'user_id': 'user-a'},
+            'accuracy_benchmark_profile': 'Auto',
+            'evolution_execution_queue': [],
+        }
+
+        application_service.hydrate_user_settings(session_state)
+
+        self.assertEqual(session_state['accuracy_benchmark_profile'], 'Hospital Encounters')
+        self.assertEqual(session_state['evolution_execution_queue'][0]['proposal_title'], 'Queued item')
+        self.assertEqual(session_state['governance_default_owner'], 'Data Steward')
+        self.assertEqual(session_state['validation_runtime_preference'], 'Prefer local/staging for heavy actions')
+        self.assertEqual(session_state['approval_routing_rules']['release_signoff'], 'Admin')
+        self.assertIn('Enterprise Release Controls', session_state['governance_policy_packs'])
+        self.assertEqual(session_state['dataset_source_mode'], 'Uploaded dataset')
+        self.assertEqual(session_state['persisted_active_dataset_bundle']['dataset_name'], 'persisted-upload.csv')
+
+    def test_application_service_build_active_controls_includes_policy_center_fields(self) -> None:
+        application_service = build_workspace_application_service(persistence_service=None)
+        session_state = {
+            'analysis_template': 'General Review',
+            'report_mode': 'Executive Summary',
+            'governance_default_owner': 'Admin',
+            'governance_default_reviewer_role': 'Data Steward',
+            'governance_release_gate_mode': 'Strict signoff',
+            'validation_runtime_preference': 'Auto',
+            'export_runtime_preference': 'Allow lightweight cloud actions only',
+            'governance_policy_packs': {'Pack A': {'export_policy_name': 'Internal Review'}},
+            'approval_routing_rules': {'mapping_approval': 'Data Steward'},
+        }
+
+        controls = application_service.build_active_controls(session_state)
+
+        self.assertEqual(controls['governance_default_owner'], 'Admin')
+        self.assertEqual(controls['governance_default_reviewer_role'], 'Data Steward')
+        self.assertEqual(controls['governance_release_gate_mode'], 'Strict signoff')
+        self.assertEqual(controls['validation_runtime_preference'], 'Auto')
+        self.assertEqual(controls['export_runtime_preference'], 'Allow lightweight cloud actions only')
+        self.assertIn('Pack A', controls['governance_policy_packs'])
+        self.assertEqual(controls['approval_routing_rules']['mapping_approval'], 'Data Steward')
 
     def test_application_service_executes_analysis_and_runtime_finalization(self) -> None:
         application_service = build_workspace_application_service(persistence_service=None)
@@ -256,6 +387,8 @@ class ServiceLayerTests(unittest.TestCase):
         self.assertIn('semantic_mapping_profiles', session_state)
         self.assertIn('organization_benchmark_packs', session_state)
         self.assertIn('dataset_review_approvals', session_state)
+        self.assertIn('evolution_memory', session_state)
+        self.assertIn('evolution_execution_queue', session_state)
         self.assertIs(session_state['persistence_service'], services.persistence_service)
         admin_view = services.admin_ops_service.build_admin_ops_view(
             workspace_identity=session_state['workspace_identity'],

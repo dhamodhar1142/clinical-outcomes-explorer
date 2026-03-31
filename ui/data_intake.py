@@ -36,6 +36,17 @@ from src.data_intake_support import (
 )
 from src.data_loader import DEMO_DATASETS, DataLoadError, load_uploaded_file
 from src.deployment_readiness import build_config_guidance, build_launch_checklist
+from src.evolution_engine import (
+    append_review_history,
+    apply_execution_autopilot,
+    build_dataset_version_diff,
+    build_execution_autopilot_actions,
+    build_release_readiness_summary,
+    queue_execution_items,
+    record_outcome_feedback,
+    update_execution_item_status,
+)
+from src.evolution_memory_store import save_evolution_memory
 from src.enterprise_features import (
     build_audit_log_view,
     build_data_lineage_view,
@@ -48,6 +59,7 @@ from src.enterprise_features import (
     infer_linked_dataset_role,
     preview_linked_merge,
 )
+from src.logger import build_support_diagnostics
 from src.mapping_profiles import (
     available_mapping_profiles,
     build_mapping_profile,
@@ -69,6 +81,7 @@ from src.readiness_engine import evaluate_analysis_readiness
 from src.schema_detection import detect_structure
 from src.semantic_mapper import CANONICAL_FIELDS, build_data_dictionary, infer_semantic_mapping
 from src.session_portability import build_session_export_bundle, build_session_export_text, parse_session_import, restore_session_bundle
+from src.storage import build_storage_backend_health
 from src.services.workspace_service import (
     add_collaboration_note_to_workspace,
     load_snapshot_into_session,
@@ -79,6 +92,8 @@ from src.services.workspace_service import (
 from src.solution_layers import build_market_specific_solution_views
 from src.temporal_detection import augment_temporal_fields
 from src.ui_components import metric_row, render_advanced_sections_toggle, render_badge_row, render_role_context_panel, render_section_intro, render_subsection_header, render_surface_panel, render_workflow_steps
+from src.validation_orchestrator import build_validation_execution_plan, run_recommended_validation
+from src.versioning import current_build_label
 from src.workspace import persist_active_workspace_state
 from ui.common import build_demo_dataset_cards, build_recommended_workflow_component, fmt, info_or_table, log_event, safe_df
 
@@ -126,6 +141,7 @@ def render_data_intake(pipeline: dict[str, Any], dataset_name: str, source_meta:
     intelligence = pipeline.get('dataset_intelligence', {})
     plan_awareness = pipeline.get('plan_awareness', {})
     application_service = st.session_state.get('application_service')
+    workspace_identity = st.session_state.get('workspace_identity', {})
     render_surface_panel(
         'Intake workflow',
         'Start with source selection, schema review, lineage, and workflow guidance before branching into workspace controls, linked analysis, or export preparation.',
@@ -260,6 +276,286 @@ def render_data_intake(pipeline: dict[str, Any], dataset_name: str, source_meta:
         ),
         tone='info',
     )
+    evolution_summary = dict(pipeline.get('evolution_summary', {}))
+    if evolution_summary.get('available'):
+        render_subsection_header(
+            'Adaptive evolution engine',
+            'Clinverity tracks recurring weak spots and turns them into ranked improvement opportunities instead of changing production logic on its own.',
+        )
+        metric_row([
+            ('Opportunities', fmt(evolution_summary.get('opportunity_count', 0))),
+            ('High priority', fmt(evolution_summary.get('high_priority_count', 0))),
+            ('Recurring patterns', fmt(evolution_summary.get('recurring_pattern_count', 0))),
+            ('Auto actions ready', fmt(len(safe_df(evolution_summary.get('auto_actions_table'))))),
+        ])
+        render_surface_panel(
+            'Adaptive goal',
+            (
+                f"Clinverity is currently optimizing this dataset family toward {str(evolution_summary.get('goal_profile', 'Healthcare intelligence expansion')).lower()}. "
+                f"{str(evolution_summary.get('goal_rationale', 'It keeps learning from recurring outcomes in this dataset family.'))}"
+            ),
+            tone='accent',
+        )
+        st.caption(str(evolution_summary.get('summary_text', '')))
+        info_or_table(
+            safe_df(evolution_summary.get('opportunities_table')),
+            'Adaptive improvement opportunities appear here after Clinverity has enough trust, readiness, and mapping context to rank them.',
+        )
+        metric_row([
+            ('Field remediation items', fmt(len(safe_df(evolution_summary.get('field_remediation_table'))))),
+            ('Feedback records', fmt(int(dict(evolution_summary.get('outcome_feedback_summary', {})).get('feedback_count', 0)))),
+            ('Helpful rate', fmt(float(dict(evolution_summary.get('outcome_feedback_summary', {})).get('helpful_rate', 0.0)), 'pct')),
+            ('Suggested validation gates', fmt(len(safe_df(evolution_summary.get('validation_recommendations_table'))))),
+        ])
+        metric_row([
+            ('Tracked backlog', fmt(int(dict(evolution_summary.get('backlog_summary', {})).get('total_items', 0)))),
+            ('Release blockers', fmt(int(dict(evolution_summary.get('backlog_summary', {})).get('release_blockers', 0)))),
+            ('Open high priority', fmt(int(dict(evolution_summary.get('backlog_summary', {})).get('high_priority_open', 0)))),
+            ('Family run history', fmt(len(safe_df(evolution_summary.get('drift_history_table'))))),
+        ])
+        info_or_table(
+            safe_df(evolution_summary.get('field_remediation_table')),
+            'Field-level remediation suggestions appear here when Clinverity can estimate the most useful schema and mapping fixes for this dataset family.',
+        )
+        validation_recommendations = safe_df(evolution_summary.get('validation_recommendations_table'))
+        if not validation_recommendations.empty and st.button(
+            'Queue recommended validation plan',
+            key=f'queue_validation_plan::{dataset_name}',
+        ):
+            validation_queue = list(st.session_state.get('evolution_execution_queue', []))
+            for row in validation_recommendations.to_dict(orient='records'):
+                validation_queue = queue_execution_items(
+                    validation_queue,
+                    pd.DataFrame(
+                        [
+                            {
+                                'proposal_title': f"{row.get('validation', 'Validation')} follow-up",
+                                'proposal_type': 'Validation plan',
+                                'priority': row.get('priority', 'Medium'),
+                                'proposed_change': row.get('why', ''),
+                                'suggested_validation': row.get('validation', ''),
+                            }
+                        ]
+                    ),
+                    dataset_name=dataset_name,
+                    dataset_family_key=str(evolution_summary.get('dataset_family_key', 'generic-healthcare')),
+                )
+            st.session_state['evolution_execution_queue'] = validation_queue
+            updated_memory = dict(st.session_state.get('evolution_memory', {}))
+            updated_memory['execution_queue'] = validation_queue
+            st.session_state['evolution_memory'] = updated_memory
+            save_evolution_memory(
+                updated_memory,
+                storage_service=st.session_state.get('storage_service'),
+                workspace_identity=workspace_identity,
+            )
+            if application_service is not None:
+                application_service.persist_user_settings(st.session_state)
+            st.success('Queued the recommended validation follow-up plan.')
+            st.rerun()
+        with st.expander('Recurring patterns and safe adaptive actions', expanded=False):
+            info_or_table(
+                safe_df(evolution_summary.get('recurring_patterns_table')),
+                'Recurring weak spots will appear here after Clinverity sees repeat patterns for this dataset family.',
+            )
+            info_or_table(
+                safe_df(evolution_summary.get('auto_actions_table')),
+                'Safe adaptive actions will appear here when Clinverity can recommend benchmark, mapping, or validation upgrades without changing production logic automatically.',
+            )
+            info_or_table(
+                safe_df(evolution_summary.get('proposal_queue_table')),
+                'Draft upgrade proposals will appear here when Clinverity can convert recurring issues into structured improvement specs.',
+            )
+            info_or_table(
+                safe_df(evolution_summary.get('validation_recommendations_table')),
+                'Adaptive validation recommendations will appear here when Clinverity can suggest the safest next validation gate for this dataset family.',
+            )
+            info_or_table(
+                safe_df(evolution_summary.get('drift_alerts_table')),
+                'Drift alerts will appear here when the current run diverges meaningfully from prior accepted patterns for this dataset family.',
+            )
+            info_or_table(
+                safe_df(st.session_state.get('evolution_execution_queue', [])),
+                'Tracked adaptive execution items will appear here after draft proposals are explicitly queued for follow-up.',
+            )
+            info_or_table(
+                safe_df(evolution_summary.get('backlog_summary_table')),
+                'Adaptive backlog summary will appear here once tracked execution work exists for the current dataset family.',
+            )
+            info_or_table(
+                safe_df(evolution_summary.get('family_intelligence_table')),
+                'Dataset-family intelligence will appear here when Clinverity has enough semantic evidence and prior observations to describe the family clearly.',
+            )
+            info_or_table(
+                safe_df(evolution_summary.get('semantic_learning_table')),
+                'Semantic learning hints will appear here when approved family profiles can guide future mapping suggestions for similar uploads.',
+            )
+            info_or_table(
+                safe_df(evolution_summary.get('outcome_feedback_table')),
+                'Outcome feedback will appear here after reviewers mark generated outputs as useful or not useful for this dataset family.',
+            )
+            info_or_table(
+                safe_df(evolution_summary.get('drift_history_table')),
+                'Family run history will appear here when Clinverity has seen repeated runs for this dataset family.',
+            )
+        review_store = st.session_state.setdefault('dataset_review_approvals', {})
+        dataset_identifier = str(
+            pipeline.get('dataset_runtime_diagnostics', {}).get('dataset_identifier', '')
+            or pipeline.get('dataset_runtime_diagnostics', {}).get('dataset_cache_key', '')
+            or dataset_name
+        )
+        review_entry = dict(review_store.get(dataset_identifier, {}))
+        history_table = safe_df(pd.DataFrame(review_entry.get('review_history', [])))
+        release_readiness = build_release_readiness_summary(
+            execution_queue=st.session_state.get('evolution_execution_queue', []),
+            review_history=review_entry.get('review_history', []),
+            approval_workflow=review_entry,
+        )
+        info_or_table(
+            release_readiness,
+            'Release-readiness checkpoints will appear here once mapping, trust, export, and adaptive backlog state are available.',
+        )
+        action_cols = st.columns(2)
+        with action_cols[0]:
+            st.write('**Outcome quality feedback**')
+            feedback_note = st.text_input(
+                'Feedback note',
+                key=f'evolution_feedback_note::{dataset_identifier}',
+                placeholder='Describe whether the generated insights or exports were useful.',
+            )
+            feedback_cols = st.columns(2)
+            if feedback_cols[0].button('Mark output helpful', key=f'evolution_feedback_helpful::{dataset_identifier}'):
+                updated_memory = record_outcome_feedback(
+                    st.session_state.get('evolution_memory', {}),
+                    dataset_family_key=str(evolution_summary.get('dataset_family_key', 'generic-healthcare')),
+                    dataset_name=dataset_name,
+                    feedback='Helpful',
+                    surface='Insights and export workflow',
+                    notes=feedback_note,
+                    reviewer=str(st.session_state.get('workspace_user_name', 'Analyst')),
+                )
+                st.session_state['evolution_memory'] = updated_memory
+                save_evolution_memory(
+                    updated_memory,
+                    storage_service=st.session_state.get('storage_service'),
+                    workspace_identity=workspace_identity,
+                )
+                if application_service is not None:
+                    application_service.persist_user_settings(st.session_state)
+                st.success('Recorded helpful outcome feedback for this dataset family.')
+                st.rerun()
+            if feedback_cols[1].button('Mark output not helpful', key=f'evolution_feedback_not_helpful::{dataset_identifier}'):
+                updated_memory = record_outcome_feedback(
+                    st.session_state.get('evolution_memory', {}),
+                    dataset_family_key=str(evolution_summary.get('dataset_family_key', 'generic-healthcare')),
+                    dataset_name=dataset_name,
+                    feedback='Not_helpful',
+                    surface='Insights and export workflow',
+                    notes=feedback_note,
+                    reviewer=str(st.session_state.get('workspace_user_name', 'Analyst')),
+                )
+                st.session_state['evolution_memory'] = updated_memory
+                save_evolution_memory(
+                    updated_memory,
+                    storage_service=st.session_state.get('storage_service'),
+                    workspace_identity=workspace_identity,
+                )
+                if application_service is not None:
+                    application_service.persist_user_settings(st.session_state)
+                st.warning('Recorded a not-helpful outcome signal so Clinverity can improve future ranking for this family.')
+                st.rerun()
+        with action_cols[1]:
+            st.write('**Governance review history**')
+            review_note = st.text_input(
+                'Governance note',
+                key=f'governance_review_note::{dataset_identifier}',
+                placeholder='Capture reviewer context, blockers, or release guidance.',
+            )
+            review_role_default = str(
+                st.session_state.get('approval_routing_rules', {}).get(
+                    'governance_note',
+                    st.session_state.get('governance_default_reviewer_role', st.session_state.get('active_role', 'Analyst')),
+                )
+            )
+            review_role = st.selectbox(
+                'Reviewer role',
+                ROLE_OPTIONS,
+                index=ROLE_OPTIONS.index(review_role_default)
+                if review_role_default in ROLE_OPTIONS
+                else 1,
+                key=f'governance_reviewer_role::{dataset_identifier}',
+            )
+            history_cols = st.columns(2)
+            if history_cols[0].button('Append governance note', key=f'append_governance_note::{dataset_identifier}'):
+                review_store = append_review_history(
+                    review_store,
+                    dataset_identifier=dataset_identifier,
+                    reviewer=str(st.session_state.get('workspace_user_name', 'Analyst')),
+                    reviewer_role=review_role,
+                    action='Governance note',
+                    status='In review',
+                    notes=review_note,
+                )
+                st.session_state['dataset_review_approvals'] = review_store
+                if application_service is not None:
+                    application_service.persist_user_settings(st.session_state)
+                st.success('Governance review history updated.')
+                st.rerun()
+            if history_cols[1].button('Mark release blocker', key=f'mark_release_blocker::{dataset_identifier}'):
+                review_store = append_review_history(
+                    review_store,
+                    dataset_identifier=dataset_identifier,
+                    reviewer=str(st.session_state.get('workspace_user_name', 'Analyst')),
+                    reviewer_role=review_role,
+                    action='Release blocker',
+                    status='Blocked',
+                    notes=review_note or 'Explicit release blocker recorded for this dataset review.',
+                )
+                review_entry = dict(review_store.get(dataset_identifier, {}))
+                review_entry['release_signoff_status'] = 'Blocked'
+                review_store[dataset_identifier] = review_entry
+                st.session_state['dataset_review_approvals'] = review_store
+                if application_service is not None:
+                    application_service.persist_user_settings(st.session_state)
+                st.warning('Release blocker recorded for the current dataset review.')
+                st.rerun()
+        with st.expander('Adaptive admin diagnostics', expanded=False):
+            storage_health = build_storage_backend_health(st.session_state.get('storage_service'))
+            support_diagnostics = build_support_diagnostics()
+            storage_notes = pd.DataFrame(
+                [{'note': note} for note in list(storage_health.get('notes', []))]
+            )
+            diagnostics_table = pd.DataFrame(
+                [
+                    {'signal': 'Build label', 'value': current_build_label()},
+                    {'signal': 'Persistence enabled', 'value': 'Yes' if application_service is not None and application_service.enabled else 'No'},
+                    {'signal': 'Storage mode', 'value': str(storage_health.get('mode', 'session'))},
+                    {'signal': 'Storage target', 'value': str(storage_health.get('storage_target', 'session-only'))},
+                    {'signal': 'Storage health', 'value': str(storage_health.get('status', 'Unknown'))},
+                    {'signal': 'Evolution memory families', 'value': fmt(len(dict(st.session_state.get('evolution_memory', {})).get('family_memory', {})))},
+                    {'signal': 'Tracked execution items', 'value': fmt(len(st.session_state.get('evolution_execution_queue', [])))},
+                    {'signal': 'Recent support diagnostics', 'value': fmt(len(safe_df(support_diagnostics.get('diagnostics_table'))))},
+                ]
+            )
+            info_or_table(diagnostics_table, 'Adaptive admin diagnostics will appear here once the runtime is initialized.')
+            render_surface_panel(
+                'Storage and runtime health',
+                str(storage_health.get('detail', 'Runtime storage diagnostics will appear here once the storage service is initialized.')),
+                tone='info' if str(storage_health.get('status', '')).lower() == 'healthy' else 'warning',
+            )
+            info_or_table(
+                storage_notes,
+                'Storage notes will appear here when the runtime provides backend guidance or configuration hints.',
+            )
+            info_or_table(
+                safe_df(support_diagnostics.get('diagnostics_table')),
+                'Recent support diagnostics will appear here when recent platform events have been captured.',
+            )
+        with st.expander('Governance review history', expanded=False):
+            info_or_table(
+                history_table,
+                'Governance review history will appear here after reviewers save notes, approvals, or release blockers for the dataset.',
+            )
     if suggested_profile:
         st.caption(
             f"Suggested mapping profile: {suggested_profile.get('profile_name', 'Mapping profile')} "
@@ -392,6 +688,252 @@ def render_data_intake(pipeline: dict[str, Any], dataset_name: str, source_meta:
         if application_service is not None:
             application_service.persist_user_settings(st.session_state)
         st.rerun()
+    evolution_auto_actions = safe_df(evolution_summary.get('auto_actions_table')) if evolution_summary.get('available') else pd.DataFrame()
+    dataset_identifier = str(
+        pipeline.get('dataset_runtime_diagnostics', {}).get('dataset_identifier', '')
+        or source_meta.get('dataset_identifier', '')
+        or dataset_cache_key
+    )
+    if not evolution_auto_actions.empty:
+        render_surface_panel(
+            'One-click adaptive actions',
+            'Approve and apply the highest-value safe improvements for this dataset family without leaving the intake workflow.',
+            tone='accent',
+        )
+        adaptive_cols = st.columns(7)
+        can_save_family_profile = bool(
+            st.session_state.get('semantic_mapping_overrides_by_dataset', {}).get(dataset_cache_key, {})
+        )
+        if adaptive_cols[0].button(
+            'Approve & Save Family Profile',
+            key=f'{remap_key}::adaptive_save_profile',
+            disabled=not can_save_family_profile,
+        ):
+            cleaned_board = editable_remap_board.sort_values(['display_order', 'source_column']).reset_index(drop=True)
+            st.session_state[remap_key] = cleaned_board
+            dataset_type = str(intelligence.get('dataset_type_label', 'General tabular dataset'))
+            profile_name = f"{dataset_family.get('family_label', dataset_type)} | Approved Family Profile"
+            template_store[profile_name] = build_mapping_template(
+                cleaned_board,
+                template_name=profile_name,
+                dataset_type=dataset_type,
+            )
+            profile_store[profile_name] = build_mapping_profile(
+                cleaned_board,
+                profile_name=profile_name,
+                dataset_type=dataset_type,
+                family_key=str(dataset_family.get('family_key', 'generic-healthcare')),
+                family_label=str(dataset_family.get('family_label', 'Generic Healthcare Feed')),
+                benchmark_profile=str(dataset_family.get('benchmark_profile', 'Generic Healthcare')),
+            )
+            review_store = st.session_state.setdefault('dataset_review_approvals', {})
+            review_state = dict(review_store.get(dataset_identifier, {}))
+            review_state['mapping_status'] = 'Approved'
+            review_state['reviewed_by_role'] = str(
+                st.session_state.get('approval_routing_rules', {}).get(
+                    'mapping_approval',
+                    st.session_state.get('governance_default_reviewer_role', st.session_state.get('active_role', 'Analyst')),
+                )
+            )
+            review_state['review_notes'] = (
+                f"{str(review_state.get('review_notes', '')).strip()} "
+                f"Approved reusable mapping profile: {profile_name}."
+            ).strip()
+            review_store[dataset_identifier] = review_state
+            if application_service is not None:
+                application_service.persist_user_settings(st.session_state)
+            st.success(f"Approved and saved reusable family profile '{profile_name}'.")
+            st.rerun()
+        suggested_benchmark = str(evolution_summary.get('suggested_benchmark_profile', 'Generic Healthcare'))
+        current_benchmark = str(st.session_state.get('accuracy_benchmark_profile', 'Auto'))
+        if adaptive_cols[1].button(
+            'Approve Suggested Benchmark',
+            key=f'{remap_key}::adaptive_benchmark',
+            disabled=not suggested_benchmark or suggested_benchmark == current_benchmark,
+        ):
+            st.session_state['accuracy_benchmark_profile'] = suggested_benchmark
+            review_store = st.session_state.setdefault('dataset_review_approvals', {})
+            review_state = dict(review_store.get(dataset_identifier, {}))
+            review_state['trust_gate_status'] = 'Approved'
+            review_state['reviewed_by_role'] = str(
+                st.session_state.get('approval_routing_rules', {}).get(
+                    'trust_gate',
+                    st.session_state.get('governance_default_reviewer_role', st.session_state.get('active_role', 'Analyst')),
+                )
+            )
+            review_state['review_notes'] = (
+                f"{str(review_state.get('review_notes', '')).strip()} "
+                f"Approved benchmark profile: {suggested_benchmark}."
+            ).strip()
+            review_store[dataset_identifier] = review_state
+            if application_service is not None:
+                application_service.persist_user_settings(st.session_state)
+            st.success(f"Approved benchmark profile '{suggested_benchmark}'.")
+            st.rerun()
+        proposal_table = safe_df(evolution_summary.get('proposal_queue_table'))
+        if adaptive_cols[2].button(
+            'Queue Draft Proposals',
+            key=f'{remap_key}::adaptive_queue_proposals',
+            disabled=proposal_table.empty,
+        ):
+            updated_queue = queue_execution_items(
+                st.session_state.get('evolution_execution_queue', []),
+                proposal_table,
+                dataset_name=dataset_name,
+                dataset_family_key=str(evolution_summary.get('dataset_family_key', 'generic-healthcare')),
+            )
+            st.session_state['evolution_execution_queue'] = updated_queue
+            updated_memory = dict(st.session_state.get('evolution_memory', {}))
+            updated_memory['execution_queue'] = updated_queue
+            st.session_state['evolution_memory'] = updated_memory
+            save_evolution_memory(
+                updated_memory,
+                storage_service=st.session_state.get('storage_service'),
+                workspace_identity=workspace_identity,
+            )
+            if application_service is not None:
+                application_service.persist_user_settings(st.session_state)
+            st.success('Draft proposals have been promoted into the tracked adaptive execution queue.')
+            st.rerun()
+        execution_items = safe_df(st.session_state.get('evolution_execution_queue', []))
+        autopilot_actions = build_execution_autopilot_actions(
+            st.session_state.get('evolution_execution_queue', []),
+            proposal_table,
+            validation_recommendations,
+        )
+        autopilot_options = autopilot_actions['action'].astype(str).tolist() if not autopilot_actions.empty else ['No safe actions available']
+        selected_autopilot_action = adaptive_cols[3].selectbox(
+            'Autopilot action',
+            autopilot_options,
+            key=f'{remap_key}::autopilot_action',
+            disabled=autopilot_actions.empty,
+        )
+        if adaptive_cols[4].button(
+            'Run Safe Autopilot',
+            key=f'{remap_key}::run_safe_autopilot',
+            disabled=autopilot_actions.empty,
+        ):
+            updated_queue = apply_execution_autopilot(
+                st.session_state.get('evolution_execution_queue', []),
+                action_name=selected_autopilot_action,
+                proposals=proposal_table,
+                validation_recommendations=validation_recommendations,
+                dataset_name=dataset_name,
+                dataset_family_key=str(evolution_summary.get('dataset_family_key', 'generic-healthcare')),
+                default_owner=str(st.session_state.get('governance_default_owner', st.session_state.get('active_role', 'Analyst'))),
+            )
+            st.session_state['evolution_execution_queue'] = updated_queue
+            updated_memory = dict(st.session_state.get('evolution_memory', {}))
+            updated_memory['execution_queue'] = updated_queue
+            st.session_state['evolution_memory'] = updated_memory
+            save_evolution_memory(
+                updated_memory,
+                storage_service=st.session_state.get('storage_service'),
+                workspace_identity=workspace_identity,
+            )
+            if application_service is not None:
+                application_service.persist_user_settings(st.session_state)
+            st.success(f"Applied safe autopilot action: {selected_autopilot_action}.")
+            st.rerun()
+        adaptive_cols[3].caption(
+            f"{len(autopilot_actions)} safe execution action(s) available"
+        )
+        execution_select_options = execution_items['proposal_title'].astype(str).tolist() if not execution_items.empty else ['No tracked items']
+        selected_execution_item = adaptive_cols[5].selectbox(
+            'Tracked item',
+            execution_select_options,
+            key=f'{remap_key}::execution_item_title',
+            disabled=execution_items.empty,
+        )
+        if adaptive_cols[6].button(
+            'Mark Tracked Item Complete',
+            key=f'{remap_key}::complete_execution_item',
+            disabled=execution_items.empty,
+        ):
+            updated_queue = update_execution_item_status(
+                st.session_state.get('evolution_execution_queue', []),
+                proposal_title=selected_execution_item,
+                status='Completed',
+            )
+            st.session_state['evolution_execution_queue'] = updated_queue
+            updated_memory = dict(st.session_state.get('evolution_memory', {}))
+            updated_memory['execution_queue'] = updated_queue
+            st.session_state['evolution_memory'] = updated_memory
+            save_evolution_memory(
+                updated_memory,
+                storage_service=st.session_state.get('storage_service'),
+                workspace_identity=workspace_identity,
+            )
+            if application_service is not None:
+                application_service.persist_user_settings(st.session_state)
+            st.success(f"Marked '{selected_execution_item}' as completed.")
+            st.rerun()
+        adaptive_cols[2].caption(
+            f"Current benchmark: {current_benchmark} | Suggested: {suggested_benchmark or 'None'}"
+        )
+        if not autopilot_actions.empty:
+            info_or_table(
+                autopilot_actions,
+                'Safe execution autopilot actions will appear here once the adaptive backlog has enough context.',
+            )
+        validation_execution_plan = safe_df(build_validation_execution_plan(validation_recommendations))
+        runnable_validation_rows = (
+            validation_execution_plan[validation_execution_plan['allowed'].astype(bool)]
+            if not validation_execution_plan.empty and 'allowed' in validation_execution_plan.columns
+            else validation_execution_plan
+        )
+        if not runnable_validation_rows.empty:
+            top_validation = str(runnable_validation_rows.iloc[0].get('validation', 'Quick validation'))
+            if st.button(
+                f'Run Top Recommended Validation: {top_validation}',
+                key=f'{remap_key}::run_top_validation',
+            ):
+                result = run_recommended_validation(top_validation)
+                runs = list(st.session_state.get('validation_orchestration_runs', []))
+                runs.insert(0, result)
+                st.session_state['validation_orchestration_runs'] = runs[:25]
+                if result.get('status') == 'Passed':
+                    st.success(f"{top_validation} completed successfully.")
+                else:
+                    st.error(f"{top_validation} failed. Review Admin Diagnostics for the execution log.")
+                st.rerun()
+        elif not validation_execution_plan.empty:
+            st.info('Recommended validation exists, but the current runtime is intentionally gating heavier checks. Use Admin Diagnostics from a local or staging environment to run them.')
+        if not execution_items.empty:
+            execution_editor = st.data_editor(
+                execution_items,
+                width='stretch',
+                hide_index=True,
+                key=f'{remap_key}::execution_queue_editor',
+                column_config={
+                    'proposal_title': st.column_config.TextColumn('Proposal', disabled=True),
+                    'proposal_type': st.column_config.TextColumn('Type', disabled=True),
+                    'priority': st.column_config.TextColumn('Priority', disabled=True),
+                    'dataset_name': st.column_config.TextColumn('Dataset', disabled=True),
+                    'owner': st.column_config.SelectboxColumn('Owner', options=['Unassigned', 'Admin', 'Analyst', 'Executive', 'Clinician', 'Researcher', 'Data Steward']),
+                    'due_state': st.column_config.SelectboxColumn('Due state', options=['Planned', 'Next review', 'Before release', 'In progress', 'Deferred']),
+                    'release_gate_status': st.column_config.SelectboxColumn('Release gate', options=['Advisory', 'Required before release', 'Blocked for release', 'Satisfied']),
+                    'status': st.column_config.SelectboxColumn('Status', options=['Queued', 'In progress', 'Completed', 'Deferred']),
+                    'proposed_change': st.column_config.TextColumn('Proposed change', disabled=True, width='large'),
+                    'suggested_validation': st.column_config.TextColumn('Suggested validation', disabled=True, width='large'),
+                },
+                disabled=['proposal_title', 'proposal_type', 'priority', 'dataset_name', 'proposed_change', 'suggested_validation'],
+            )
+            if st.button('Save Execution Workflow', key=f'{remap_key}::save_execution_workflow'):
+                updated_queue = execution_editor.to_dict(orient='records')
+                st.session_state['evolution_execution_queue'] = updated_queue
+                updated_memory = dict(st.session_state.get('evolution_memory', {}))
+                updated_memory['execution_queue'] = updated_queue
+                st.session_state['evolution_memory'] = updated_memory
+                save_evolution_memory(
+                    updated_memory,
+                    storage_service=st.session_state.get('storage_service'),
+                    workspace_identity=workspace_identity,
+                )
+                if application_service is not None:
+                    application_service.persist_user_settings(st.session_state)
+                st.success('Adaptive execution workflow saved.')
+                st.rerun()
     available_templates = list(template_store.keys())
     selected_template = remap_actions[4].selectbox(
         'Apply template',
@@ -442,6 +984,49 @@ def render_data_intake(pipeline: dict[str, Any], dataset_name: str, source_meta:
                 f"- `{str(override.get('canonical_field', '')).strip()}` <- "
                 f"`{str(override.get('source_column', '')).strip()}`"
             )
+    version_records = application_service.list_dataset_versions(workspace_identity, dataset_name=dataset_name) if application_service is not None else []
+    version_table = safe_df(pd.DataFrame(version_records))
+    if not version_table.empty:
+        render_subsection_header('Dataset version history', 'Compare the active dataset with prior stored versions from this workspace.')
+        display_columns = [
+            column
+            for column in ['dataset_name', 'version_label', 'source_mode', 'row_count', 'column_count', 'file_size_mb', 'created_at', 'is_active']
+            if column in version_table.columns
+        ]
+        metric_row([
+            ('Stored versions', fmt(len(version_table))),
+            ('Latest version hash', str(version_table.iloc[0].get('version_hash', ''))[:10]),
+            ('Current source', str(source_meta.get('source_mode', 'Unknown'))),
+            ('Workspace persistence', 'Enabled'),
+        ])
+        info_or_table(
+            version_table[display_columns] if display_columns else version_table,
+            'Dataset version history will appear here when persistence is enabled and prior versions have been stored.',
+        )
+        if len(version_table) >= 2:
+            current_row = version_table.iloc[0]
+            previous_row = version_table.iloc[1]
+            version_diff = build_dataset_version_diff(
+                current_row.to_dict(),
+                previous_row.to_dict(),
+            )
+            with st.expander('Compare latest vs previous version', expanded=False):
+                info_or_table(
+                    safe_df(version_diff.get('summary_table')),
+                    'Version comparison details appear here when at least two stored dataset versions are available.',
+                )
+                info_or_table(
+                    safe_df(version_diff.get('added_columns_table')),
+                    'Added columns will appear here when the current dataset version introduced new source fields.',
+                )
+                info_or_table(
+                    safe_df(version_diff.get('removed_columns_table')),
+                    'Removed columns will appear here when the latest version dropped fields from the prior version.',
+                )
+                info_or_table(
+                    safe_df(version_diff.get('dtype_changes_table')),
+                    'Column type changes will appear here when the same source field changed dtype between versions.',
+                )
 
     st.markdown('### Data Profiling Summary')
     profiling_summary = build_data_profiling_summary(pipeline)

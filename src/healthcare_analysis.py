@@ -508,6 +508,263 @@ def claims_cost_analyzer(data: pd.DataFrame, canonical_map: dict[str, str]) -> d
     }
 
 
+def claims_validation_utilization_engine(data: pd.DataFrame, canonical_map: dict[str, str]) -> dict[str, object]:
+    claim_col = _resolve_column(data, canonical_map, ['claim_id'], ['claim_id', 'claim_number'])
+    member_col = _resolve_column(data, canonical_map, ['member_id', 'patient_id'], ['member_id', 'patient_id', 'subscriber_id'])
+    payer_col = _resolve_column(data, canonical_map, ['payer', 'plan'], ['payer', 'payor', 'insurance', 'plan'])
+    provider_col = _resolve_column(data, canonical_map, ['provider_name', 'provider_id', 'facility'], ['provider_name', 'provider_id', 'facility'])
+    service_date_col = _resolve_column(data, canonical_map, ['service_date', 'admission_date', 'event_date'], ['service_date', 'date_of_service', 'dos', 'admission_date', 'event_date'])
+    paid_col = _resolve_column(data, canonical_map, ['paid_amount'], ['paid_amount', 'paid', 'net_paid'])
+    allowed_col = _resolve_column(data, canonical_map, ['allowed_amount'], ['allowed_amount', 'allowed'])
+    billed_col = _resolve_column(data, canonical_map, ['billed_amount', 'cost_amount'], ['billed_amount', 'billed', 'gross_billed', 'cost_amount', 'cost'])
+    diagnosis_col = _resolve_column(data, canonical_map, ['diagnosis_code'], ['diagnosis_code', 'diagnosis', 'dx', 'dx_code'])
+
+    supporting_fields = [col for col in [claim_col, member_col, payer_col, provider_col, service_date_col, diagnosis_col, paid_col, allowed_col, billed_col] if col]
+    if (
+        len(supporting_fields) < 4
+        or not claim_col
+        or not member_col
+        or not any([paid_col, allowed_col, billed_col])
+        or not any([payer_col, provider_col, service_date_col, diagnosis_col])
+    ):
+        return {
+            'available': False,
+            'reason': 'Claims validation needs claim/member identity, at least one financial amount field, and a payer/provider/date-style utilization dimension to run a reliable claims workflow.',
+        }
+
+    frame = data.copy()
+    if service_date_col and service_date_col in frame.columns:
+        frame[service_date_col] = pd.to_datetime(frame[service_date_col], errors='coerce')
+    for col in [paid_col, allowed_col, billed_col]:
+        if col and col in frame.columns:
+            frame[col] = _safe_numeric(frame[col])
+
+    total_rows = int(len(frame))
+    distinct_claims = int(frame[claim_col].nunique(dropna=True)) if claim_col and claim_col in frame.columns else 0
+    distinct_members = int(frame[member_col].nunique(dropna=True)) if member_col and member_col in frame.columns else 0
+    duplicate_claim_rows = 0
+    if claim_col and claim_col in frame.columns:
+        duplicate_claim_rows = int(frame[frame[claim_col].notna() & frame[claim_col].duplicated(keep=False)].shape[0])
+
+    validation_checks: list[dict[str, object]] = []
+
+    def _add_check(check: str, failed_rows: int, severity: str, guidance: str) -> None:
+        validation_checks.append(
+            {
+                'check': check,
+                'failed_rows': int(failed_rows),
+                'failure_rate': (float(failed_rows) / total_rows) if total_rows else 0.0,
+                'severity': severity,
+                'guidance': guidance,
+            }
+        )
+
+    if claim_col and claim_col in frame.columns:
+        _add_check(
+            'Missing claim identifier',
+            int(frame[claim_col].isna().sum()),
+            'High',
+            'Backfill or map the claim identifier before using claim-level reconciliation or duplicate monitoring.',
+        )
+        _add_check(
+            'Duplicate claim rows',
+            duplicate_claim_rows,
+            'High' if duplicate_claim_rows else 'Low',
+            'Review repeated claim identifiers to confirm whether the file is line-level, header-level, or contains duplicate submissions.',
+        )
+    if member_col and member_col in frame.columns:
+        _add_check(
+            'Missing member identifier',
+            int(frame[member_col].isna().sum()),
+            'Medium',
+            'Member identity strengthens utilization rates, repeated-claim review, and payer/member segmentation.',
+        )
+    if service_date_col and service_date_col in frame.columns:
+        _add_check(
+            'Missing service date',
+            int(frame[service_date_col].isna().sum()),
+            'Medium',
+            'Service dates are needed for longitudinal utilization, monthly trending, and lag monitoring.',
+        )
+    for label, col in [('Paid amount', paid_col), ('Allowed amount', allowed_col), ('Billed amount', billed_col)]:
+        if col and col in frame.columns:
+            _add_check(
+                f'Missing {label.lower()}',
+                int(frame[col].isna().sum()),
+                'Medium',
+                f'{label} completeness improves financial reconciliation and cost benchmarking.',
+            )
+            _add_check(
+                f'Negative {label.lower()}',
+                int((frame[col] < 0).fillna(False).sum()),
+                'High',
+                f'Negative {label.lower()} rows often indicate reversals, recoveries, or source normalization issues that need explicit handling.',
+            )
+
+    if paid_col and allowed_col and paid_col in frame.columns and allowed_col in frame.columns:
+        _add_check(
+            'Paid exceeds allowed',
+            int(((frame[paid_col] > frame[allowed_col]) & frame[paid_col].notna() & frame[allowed_col].notna()).sum()),
+            'High',
+            'Paid amounts above allowed should be reviewed for adjustments, secondary payments, or source mapping issues.',
+        )
+    if allowed_col and billed_col and allowed_col in frame.columns and billed_col in frame.columns:
+        _add_check(
+            'Allowed exceeds billed',
+            int(((frame[allowed_col] > frame[billed_col]) & frame[allowed_col].notna() & frame[billed_col].notna()).sum()),
+            'High',
+            'Allowed amounts above billed charges usually signal mapping errors or source reconciliation issues.',
+        )
+
+    validation_table = pd.DataFrame(validation_checks).sort_values(['failed_rows', 'severity'], ascending=[False, True]).reset_index(drop=True)
+
+    summary_cards = [
+        {'label': 'Claims in scope', 'value': f'{distinct_claims:,}' if distinct_claims else f'{total_rows:,}'},
+        {'label': 'Members in scope', 'value': f'{distinct_members:,}' if distinct_members else 'Not available'},
+        {'label': 'Duplicate claim rows', 'value': f'{duplicate_claim_rows:,}'},
+        {'label': 'Validation checks', 'value': f'{len(validation_table):,}'},
+    ]
+
+    payer_table = pd.DataFrame()
+    if payer_col and payer_col in frame.columns:
+        group_cols = [payer_col]
+        agg_map: dict[str, tuple[str, str]] = {'claim_rows': (payer_col, 'size')}
+        if claim_col and claim_col in frame.columns:
+            agg_map['distinct_claims'] = (claim_col, 'nunique')
+        if member_col and member_col in frame.columns:
+            agg_map['distinct_members'] = (member_col, 'nunique')
+        if paid_col and paid_col in frame.columns:
+            agg_map['total_paid_amount'] = (paid_col, 'sum')
+            agg_map['average_paid_amount'] = (paid_col, 'mean')
+        if allowed_col and allowed_col in frame.columns:
+            agg_map['total_allowed_amount'] = (allowed_col, 'sum')
+        if billed_col and billed_col in frame.columns:
+            agg_map['total_billed_amount'] = (billed_col, 'sum')
+        payer_frame = _clean_group_field(frame[[col for col in set(group_cols + [c for c in [claim_col, member_col, paid_col, allowed_col, billed_col] if c])]].copy(), payer_col)
+        if not payer_frame.empty:
+            payer_table = payer_frame.groupby(payer_col).agg(**agg_map).reset_index()
+            if {'total_paid_amount', 'total_allowed_amount'} <= set(payer_table.columns):
+                payer_table['paid_to_allowed_ratio'] = payer_table['total_paid_amount'] / payer_table['total_allowed_amount'].replace(0, pd.NA)
+            payer_table = payer_table.sort_values(
+                ['total_paid_amount', 'claim_rows'] if 'total_paid_amount' in payer_table.columns else ['claim_rows'],
+                ascending=[False, False] if 'total_paid_amount' in payer_table.columns else [False],
+            ).reset_index(drop=True)
+
+    provider_table = pd.DataFrame()
+    if provider_col and provider_col in frame.columns:
+        provider_subset = [provider_col] + [col for col in [claim_col, member_col, paid_col] if col and col in frame.columns]
+        provider_frame = _clean_group_field(frame[provider_subset].copy(), provider_col)
+        if not provider_frame.empty:
+            agg_map: dict[str, tuple[str, str]] = {'claim_rows': (provider_col, 'size')}
+            if claim_col and claim_col in provider_frame.columns:
+                agg_map['distinct_claims'] = (claim_col, 'nunique')
+            if member_col and member_col in provider_frame.columns:
+                agg_map['distinct_members'] = (member_col, 'nunique')
+            if paid_col and paid_col in provider_frame.columns:
+                agg_map['total_paid_amount'] = (paid_col, 'sum')
+            provider_table = provider_frame.groupby(provider_col).agg(**agg_map).reset_index().sort_values('claim_rows', ascending=False).head(15)
+
+    monthly_utilization = pd.DataFrame()
+    if service_date_col and service_date_col in frame.columns:
+        dated = frame[frame[service_date_col].notna()].copy()
+        if not dated.empty:
+            dated['service_month'] = dated[service_date_col].dt.to_period('M').dt.to_timestamp()
+            monthly_utilization = dated.groupby('service_month').agg(
+                claim_rows=(service_date_col, 'size'),
+                distinct_claims=(claim_col, 'nunique') if claim_col and claim_col in dated.columns else (service_date_col, 'size'),
+                distinct_members=(member_col, 'nunique') if member_col and member_col in dated.columns else (service_date_col, 'size'),
+                total_paid_amount=(paid_col, 'sum') if paid_col and paid_col in dated.columns else (service_date_col, 'size'),
+            ).reset_index()
+            if paid_col and paid_col in dated.columns:
+                monthly_utilization['average_paid_amount'] = monthly_utilization['total_paid_amount'] / monthly_utilization['claim_rows'].replace(0, pd.NA)
+
+    diagnosis_table = pd.DataFrame()
+    if diagnosis_col and diagnosis_col in frame.columns:
+        diagnosis_subset = [diagnosis_col] + [col for col in [claim_col, paid_col] if col and col in frame.columns]
+        diagnosis_frame = _clean_group_field(frame[diagnosis_subset].copy(), diagnosis_col)
+        if not diagnosis_frame.empty:
+            agg_map: dict[str, tuple[str, str]] = {'claim_rows': (diagnosis_col, 'size')}
+            if claim_col and claim_col in diagnosis_frame.columns:
+                agg_map['distinct_claims'] = (claim_col, 'nunique')
+            if paid_col and paid_col in diagnosis_frame.columns:
+                agg_map['total_paid_amount'] = (paid_col, 'sum')
+            diagnosis_table = diagnosis_frame.groupby(diagnosis_col).agg(**agg_map).reset_index().sort_values('claim_rows', ascending=False).head(15)
+
+    flagged_rows = frame.copy()
+    flagged_rows['claim_validation_flags'] = ''
+    if paid_col and allowed_col and paid_col in flagged_rows.columns and allowed_col in flagged_rows.columns:
+        flagged_rows.loc[(flagged_rows[paid_col] > flagged_rows[allowed_col]) & flagged_rows[paid_col].notna() & flagged_rows[allowed_col].notna(), 'claim_validation_flags'] += 'paid_exceeds_allowed;'
+    if allowed_col and billed_col and allowed_col in flagged_rows.columns and billed_col in flagged_rows.columns:
+        flagged_rows.loc[(flagged_rows[allowed_col] > flagged_rows[billed_col]) & flagged_rows[allowed_col].notna() & flagged_rows[billed_col].notna(), 'claim_validation_flags'] += 'allowed_exceeds_billed;'
+    if paid_col and paid_col in flagged_rows.columns:
+        flagged_rows.loc[(flagged_rows[paid_col] < 0).fillna(False), 'claim_validation_flags'] += 'negative_paid;'
+    if claim_col and claim_col in flagged_rows.columns:
+        dup_mask = flagged_rows[claim_col].notna() & flagged_rows[claim_col].duplicated(keep=False)
+        flagged_rows.loc[dup_mask, 'claim_validation_flags'] += 'duplicate_claim_id;'
+    flagged_rows['claim_validation_flags'] = flagged_rows['claim_validation_flags'].str.strip(';')
+    flagged_rows = flagged_rows[flagged_rows['claim_validation_flags'] != ''].copy()
+    if paid_col and paid_col in flagged_rows.columns:
+        flagged_rows = flagged_rows.sort_values(paid_col, ascending=False)
+    flagged_rows = flagged_rows.head(30)
+
+    financial_summary_rows: list[dict[str, object]] = []
+    for metric, col in [('Total paid amount', paid_col), ('Total allowed amount', allowed_col), ('Total billed amount', billed_col)]:
+        if col and col in frame.columns:
+            financial_summary_rows.append({'metric': metric, 'value': float(frame[col].sum())})
+            financial_summary_rows.append({'metric': f'Average {metric.replace("Total ", "").lower()}', 'value': float(frame[col].mean())})
+    if member_col and distinct_members:
+        if paid_col and paid_col in frame.columns:
+            financial_summary_rows.append({'metric': 'Paid amount per member', 'value': float(frame[paid_col].sum() / max(distinct_members, 1))})
+        financial_summary_rows.append({'metric': 'Claims per member', 'value': float(total_rows / max(distinct_members, 1))})
+    financial_summary = pd.DataFrame(financial_summary_rows)
+
+    failed_high = int(validation_table[validation_table['severity'] == 'High']['failed_rows'].sum()) if not validation_table.empty else 0
+    readiness_label = 'Strong'
+    if failed_high > 0 or duplicate_claim_rows > 0:
+        readiness_label = 'Review needed'
+    if failed_high > max(5, int(total_rows * 0.1)):
+        readiness_label = 'High risk'
+
+    narrative_parts = [
+        f'The claims engine reviewed {total_rows:,} rows',
+        f'covering {distinct_claims:,} distinct claims' if distinct_claims else 'with claim identity partially available',
+    ]
+    if distinct_members:
+        narrative_parts.append(f'and {distinct_members:,} members')
+    if payer_table is not None and not payer_table.empty:
+        top_payer = payer_table.iloc[0]
+        narrative_parts.append(f"with {top_payer[payer_col]} carrying the largest observed volume")
+    narrative = ' '.join(narrative_parts) + '.'
+    if not validation_table.empty:
+        top_issue = validation_table.sort_values('failed_rows', ascending=False).iloc[0]
+        narrative += f" The top validation issue is {str(top_issue['check']).lower()} affecting {int(top_issue['failed_rows']):,} rows."
+
+    return {
+        'available': True,
+        'workflow_title': 'Healthcare Claims Validation & Utilization Engine',
+        'summary_cards': summary_cards,
+        'readiness_label': readiness_label,
+        'validation_table': validation_table,
+        'financial_summary': financial_summary,
+        'payer_utilization': payer_table,
+        'provider_utilization': provider_table,
+        'monthly_utilization': monthly_utilization,
+        'diagnosis_utilization': diagnosis_table,
+        'flagged_rows': flagged_rows,
+        'narrative': narrative,
+        'supporting_columns': {
+            'claim_id': claim_col,
+            'member_id': member_col,
+            'payer': payer_col,
+            'provider': provider_col,
+            'service_date': service_date_col,
+            'paid_amount': paid_col,
+            'allowed_amount': allowed_col,
+            'billed_amount': billed_col,
+        },
+    }
+
+
 def provider_analysis(data: pd.DataFrame, canonical_map: dict[str, str]) -> dict[str, object]:
     provider_col = _resolve_column(data, canonical_map, ['provider_name', 'facility', 'room_id', 'provider_id'], ['provider_name', 'facility', 'room_id', 'provider_id'])
     cost_col = _resolve_column(data, canonical_map, ['cost_amount', 'paid_amount', 'allowed_amount', 'billed_amount'], ['cost_amount', 'paid_amount', 'allowed_amount', 'billed_amount', 'cost'])
@@ -3369,6 +3626,7 @@ def run_healthcare_analysis(data: pd.DataFrame, canonical_map: dict[str, str], s
     scenario = scenario_simulation(data, canonical_map, smoking_prevalence=25.0, treatment_type=default_treatment, treatment_share=50.0)
     return {
         **readiness,
+        'claims_validation_utilization': claims_validation_utilization_engine(data, canonical_map),
         'utilization': utilization_analysis(data, canonical_map),
         'cost': cost_analysis(data, canonical_map),
         'provider': provider_analysis(data, canonical_map),

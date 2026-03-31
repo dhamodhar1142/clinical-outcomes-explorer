@@ -199,6 +199,30 @@ class StorageService:
         saved = self.repository.save_bytes(relative_path, _normalize_bytes(payload))
         return {'stored': True, 'mode': self.status.mode, 'artifact_type': 'session_bundle', **saved}
 
+    def save_runtime_state(
+        self,
+        workspace_identity: dict[str, Any] | None,
+        *,
+        state_name: str,
+        payload: bytes | bytearray | str,
+    ) -> dict[str, Any]:
+        if not self.enabled or self.repository is None:
+            return {'stored': False, 'mode': 'session', 'artifact_type': 'runtime_state'}
+        relative_path = f"{self._workspace_prefix(workspace_identity)}/runtime/{_slug(state_name)}.json"
+        saved = self.repository.save_bytes(relative_path, _normalize_bytes(payload))
+        return {'stored': True, 'mode': self.status.mode, 'artifact_type': 'runtime_state', **saved}
+
+    def load_runtime_state(
+        self,
+        workspace_identity: dict[str, Any] | None,
+        *,
+        state_name: str,
+    ) -> bytes:
+        if not self.enabled or self.repository is None:
+            raise FileNotFoundError('Persistent artifact storage is not enabled for this environment.')
+        relative_path = f"{self._workspace_prefix(workspace_identity)}/runtime/{_slug(state_name)}.json"
+        return self.repository.load_bytes(relative_path=relative_path)
+
     def load_artifact_bytes(
         self,
         *,

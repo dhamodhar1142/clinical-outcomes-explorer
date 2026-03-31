@@ -845,12 +845,19 @@ def build_approval_workflow_summary(
     mapping_status = str(review_state.get('mapping_status', 'Pending'))
     trust_status = str(review_state.get('trust_gate_status', 'Pending'))
     export_status = str(review_state.get('export_eligibility_status', 'Pending'))
-    approved = mapping_status == 'Approved' and trust_status == 'Approved' and export_status == 'Approved'
+    release_signoff_status = str(review_state.get('release_signoff_status', 'Pending'))
+    approved = (
+        mapping_status == 'Approved'
+        and trust_status == 'Approved'
+        and export_status == 'Approved'
+        and release_signoff_status == 'Approved'
+    )
     return {
         'dataset_identifier': dataset_identifier,
         'mapping_status': mapping_status,
         'trust_gate_status': trust_status,
         'export_eligibility_status': export_status,
+        'release_signoff_status': release_signoff_status,
         'approved_for_release': approved,
         'review_notes': str(review_state.get('review_notes', '')),
         'reviewed_by_role': str(review_state.get('reviewed_by_role', active_control_values.get('active_role', 'Analyst'))),

@@ -747,6 +747,11 @@ def build_data_lineage_view(
                         'status': approval_workflow.get('export_eligibility_status', 'Pending'),
                         'detail': 'Controls whether governed external handoff is approved for the current dataset context.',
                     },
+                    {
+                        'review_stage': 'Release signoff',
+                        'status': approval_workflow.get('release_signoff_status', 'Pending'),
+                        'detail': 'Tracks whether the current dataset review is approved for outward release or remains internal-only.',
+                    },
                 ]
             )
 

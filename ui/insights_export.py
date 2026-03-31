@@ -12,10 +12,14 @@ from src.audience_modes import build_audience_mode_guidance
 from src.collaboration_notes import build_collaboration_notes_view
 from src.decision_support import build_executive_summary, build_intervention_recommendations, build_prioritized_insights, build_scenario_simulation_studio
 from src.enterprise_features import build_audit_log_view
+from src.export_orchestrator import build_export_execution_plan, build_export_runtime_profile, recommended_report_label
 from src.export_utils import (
     apply_export_policy,
     apply_role_based_redaction,
     build_audience_report_text,
+    build_claims_export_csv_bundle,
+    build_claims_export_tables,
+    build_claims_validation_report_markdown,
     build_compliance_dashboard_csv,
     build_compliance_dashboard_payload,
     build_compliance_handoff_payload,
@@ -44,6 +48,14 @@ from src.modules.privacy_security import apply_export_watermark, build_export_go
 from src.modules.rbac import can_access
 from src.ops_hardening import build_export_safety_note
 from src.plan_awareness import plan_feature_enabled
+from src.product_story import (
+    PRODUCT_ONE_LINER,
+    build_core_outcomes_table,
+    build_demo_script_text,
+    build_demo_walkthrough_table,
+    build_professional_export_template,
+    build_role_pitch_table,
+)
 from src.services.copilot_service import execute_copilot_prompt, plan_copilot_workflow
 from src.services.export_service import generate_export_report_output, prepare_policy_aware_export_bundle, record_export_bundle_metadata_once
 from src.ui_components import metric_row, render_advanced_sections_toggle, render_badge_row, render_role_context_panel, render_section_intro, render_surface_panel, render_subsection_header, render_workflow_steps
@@ -141,6 +153,16 @@ def render_key_insights(pipeline: dict[str, Any], dataset_name: str) -> None:
     render_surface_panel(
         'Insight workflow',
         'Use this surface to review prioritized findings, intervention signals, explainability notes, and governed narrative output for the active dataset.',
+    )
+    render_surface_panel(
+        'Clinverity value story',
+        PRODUCT_ONE_LINER,
+        tone='accent',
+    )
+    render_subsection_header('Core outcomes', 'Keep the product story tight: fast risk visibility, actionable analytics, and stakeholder-ready packaging.')
+    info_or_table(
+        build_core_outcomes_table(),
+        'Core product outcomes will appear here when Clinverity positioning content is available.',
     )
     render_workflow_steps(
         [
@@ -357,6 +379,11 @@ def render_export_center(pipeline: dict[str, Any], dataset_name: str, source_met
         'Export workflow guidance',
         'Choose the smallest approved handoff that fits the audience: one primary report, the necessary support tables, and governance material only when the review requires it.',
     )
+    render_surface_panel(
+        'Why this matters',
+        PRODUCT_ONE_LINER,
+        tone='accent',
+    )
     advanced_export_sections_enabled = render_advanced_sections_toggle(
         'export_center',
         help_text='Expand bundle, governance, and portfolio export sections by default for admin or steward review.',
@@ -431,6 +458,18 @@ def render_export_center(pipeline: dict[str, Any], dataset_name: str, source_met
     advanced_exports_allowed = export_allowed and (plan_feature_enabled(str(plan_awareness.get('active_plan', 'Pro')), 'advanced_exports') or not strict_plan)
     governance_exports_allowed = export_allowed and (plan_feature_enabled(str(plan_awareness.get('active_plan', 'Pro')), 'governance_exports') or not strict_plan)
     stakeholder_bundle_allowed = export_allowed and (plan_feature_enabled(str(plan_awareness.get('active_plan', 'Pro')), 'stakeholder_bundle') or not strict_plan)
+    export_runtime_profile = build_export_runtime_profile(pipeline)
+    export_execution_plan = safe_df(
+        build_export_execution_plan(
+            pipeline,
+            role=role,
+            export_allowed=export_allowed,
+            advanced_exports_allowed=advanced_exports_allowed,
+            governance_exports_allowed=governance_exports_allowed,
+            stakeholder_bundle_allowed=stakeholder_bundle_allowed,
+        )
+    )
+    recommended_export_label = recommended_report_label(role, pipeline)
     metric_row([
         ('Export Role', role),
         ('Plan', str(plan_awareness.get('active_plan', 'Pro'))),
@@ -468,6 +507,16 @@ def render_export_center(pipeline: dict[str, Any], dataset_name: str, source_met
         st.caption('Advanced export bundles are packaged as a premium capability. They remain visible here in demo-safe mode so the export flow can still be reviewed.')
     if export_safety_note:
         st.caption(export_safety_note)
+    render_subsection_header('Export runtime posture')
+    render_surface_panel(
+        'Execution posture',
+        str(export_runtime_profile.get('detail', 'Export runtime guidance will appear here once the current environment is profiled.')),
+        tone='info',
+    )
+    info_or_table(
+        export_execution_plan,
+        'Export execution guidance will appear here when the current role, plan, and dataset context are available.',
+    )
     if trust_summary.get('available'):
         render_subsection_header('Result trust disclosure')
         metric_row([
@@ -555,6 +604,33 @@ def render_export_center(pipeline: dict[str, Any], dataset_name: str, source_met
             application_service.persist_user_settings(st.session_state)
         st.success('Approval workflow state saved for the current dataset.')
         st.rerun()
+    signoff_actions = st.columns(2)
+    if signoff_actions[0].button('Approve all and mark release-ready', key=f'approve_all::{dataset_identifier}'):
+        review_store[dataset_identifier] = {
+            'mapping_status': 'Approved',
+            'trust_gate_status': 'Approved',
+            'export_eligibility_status': 'Approved',
+            'release_signoff_status': 'Approved',
+            'reviewed_by_role': reviewer_role,
+            'review_notes': (str(review_notes).strip() + ' Full release signoff approved.').strip(),
+        }
+        if application_service is not None:
+            application_service.persist_user_settings(st.session_state)
+        st.success('Full release signoff approved for the current dataset.')
+        st.rerun()
+    if signoff_actions[1].button('Mark internal-only release state', key=f'internal_only::{dataset_identifier}'):
+        review_store[dataset_identifier] = {
+            'mapping_status': mapping_status,
+            'trust_gate_status': 'Directional only' if trust_status == 'Pending' else trust_status,
+            'export_eligibility_status': 'Internal only',
+            'release_signoff_status': 'Internal only',
+            'reviewed_by_role': reviewer_role,
+            'review_notes': (str(review_notes).strip() + ' Internal-only release posture confirmed.').strip(),
+        }
+        if application_service is not None:
+            application_service.persist_user_settings(st.session_state)
+        st.success('Dataset marked as internal-only for release workflow.')
+        st.rerun()
     if review_actions[1].button('Save benchmark pack from current context', key=f'save_pack::{dataset_identifier}'):
         benchmark_name = f"{dataset_name} benchmark pack"
         observed = safe_df(accuracy_summary.get('benchmark_calibration_table'))
@@ -589,6 +665,46 @@ def render_export_center(pipeline: dict[str, Any], dataset_name: str, source_met
             application_service.persist_user_settings(st.session_state)
         st.success(f"Saved organization benchmark pack '{benchmark_name}'.")
         st.rerun()
+    render_subsection_header('Benchmark pack manager')
+    benchmark_pack_names = ['None', *sorted(benchmark_pack_store.keys())]
+    benchmark_manage_cols = st.columns(3)
+    selected_pack = benchmark_manage_cols[0].selectbox(
+        'Manage benchmark pack',
+        benchmark_pack_names,
+        index=benchmark_pack_names.index(str(st.session_state.get('active_benchmark_pack_name', 'None'))) if str(st.session_state.get('active_benchmark_pack_name', 'None')) in benchmark_pack_names else 0,
+        key=f'benchmark_manage::{dataset_identifier}',
+    )
+    if benchmark_manage_cols[1].button('Activate selected pack', key=f'activate_pack::{dataset_identifier}', disabled=selected_pack == 'None'):
+        st.session_state['active_benchmark_pack_name'] = selected_pack
+        if application_service is not None:
+            application_service.persist_user_settings(st.session_state)
+        st.success(f"Activated benchmark pack '{selected_pack}'.")
+        st.rerun()
+    if benchmark_manage_cols[2].button('Delete selected pack', key=f'delete_pack::{dataset_identifier}', disabled=selected_pack == 'None'):
+        benchmark_pack_store.pop(selected_pack, None)
+        if st.session_state.get('active_benchmark_pack_name') == selected_pack:
+            st.session_state['active_benchmark_pack_name'] = 'None'
+        if application_service is not None:
+            application_service.persist_user_settings(st.session_state)
+        st.success(f"Deleted benchmark pack '{selected_pack}'.")
+        st.rerun()
+    if benchmark_pack_store:
+        benchmark_pack_table = pd.DataFrame(
+            [
+                {
+                    'benchmark_pack': name,
+                    'profile_family': str(pack.get('profile_family', 'organization-pack')),
+                    'detail_note': str(pack.get('detail_note', '')),
+                    'rate_band_count': len(dict(pack.get('rate_bands', {}))),
+                    'numeric_band_count': len(dict(pack.get('numeric_bands', {}))),
+                }
+                for name, pack in benchmark_pack_store.items()
+            ]
+        )
+        info_or_table(
+            benchmark_pack_table,
+            'Benchmark packs will appear here after at least one organization-specific pack has been created.',
+        )
 
     text_report = build_text_report(dataset_name, pipeline['overview'], pipeline['structure'], pipeline['field_profile'], pipeline['quality'], pipeline['semantic'], pipeline['readiness'], pipeline['healthcare'], pipeline['insights'])
     executive_report = build_executive_summary_text(
@@ -600,6 +716,9 @@ def render_export_center(pipeline: dict[str, Any], dataset_name: str, source_met
         accuracy_summary,
     )
     readmission_report = build_readmission_summary_text(dataset_name, pipeline['healthcare'].get('readmission', {}), safe_df(pipeline.get('action_recommendations')))
+    claims_report = build_claims_validation_report_markdown(dataset_name, pipeline['overview'], pipeline['healthcare'].get('claims_validation_utilization', {}))
+    claims_export_tables = build_claims_export_tables(dataset_name, pipeline['overview'], pipeline['healthcare'].get('claims_validation_utilization', {}))
+    claims_export_bundle = build_claims_export_csv_bundle(dataset_name, pipeline['overview'], pipeline['healthcare'].get('claims_validation_utilization', {}))
     audience_report = build_audience_report_text(report_mode, dataset_name, pipeline['overview'], pipeline['structure'], pipeline['quality'], pipeline['semantic'], pipeline['readiness'], pipeline['healthcare'], pipeline['insights'], pipeline['action_recommendations'])
     support_csv = build_report_support_csv(report_mode, pipeline['overview'], pipeline['quality'], pipeline['readiness'], pipeline['healthcare'], pipeline['action_recommendations'])
     compliance_summary = build_compliance_summary_text(dataset_name, pipeline['standards'], privacy, role=role)
@@ -625,6 +744,7 @@ def render_export_center(pipeline: dict[str, Any], dataset_name: str, source_met
     bundle_title = export_bundle['bundle_title']
     bundle_table = export_bundle['bundle_table']
     export_presets = _build_export_workflow_presets(pipeline, role)
+    professional_template = build_professional_export_template(report_mode)
     remediation = pipeline.get('remediation_context', {})
     audience_guidance = build_audience_mode_guidance(
         role,
@@ -640,8 +760,22 @@ def render_export_center(pipeline: dict[str, Any], dataset_name: str, source_met
         return apply_export_watermark(protected, str(policy_eval.get('watermark_label', 'Internal export')))
 
     with export_sections['strategy']:
+        render_subsection_header('Executive proof points')
+        metric_row([
+            ('Health score', str(int(pipeline.get('quality', {}).get('quality_score', 0) or 0))),
+            ('Readiness', fmt(pipeline.get('readiness', {}).get('readiness_score', 0.0), 'score')),
+            ('Trust', str(trust_summary.get('trust_level', 'Not available'))),
+            ('Top risk', str(pipeline.get('dataset_intelligence', {}).get('highest_risk_area', 'Quality / readiness review'))),
+        ])
         render_subsection_header('Recommended export bundle')
         st.write(f"Recommended report for **{role}**: **{recommended_report_mode_for_role(role)}**")
+        if not safe_df(pipeline.get('action_recommendations')).empty:
+            render_subsection_header('Top recommendations')
+            for _, row in safe_df(pipeline.get('action_recommendations')).head(3).iterrows():
+                st.write(
+                    f"- **{row.get('recommendation_title', 'Recommendation')}**"
+                    f": {row.get('why_it_matters', row.get('recommendation_summary', ''))}"
+                )
         render_subsection_header('Audience output guidance')
         st.write(str(audience_guidance.get('help_text', 'Audience-specific output guidance is not available yet.')))
         info_or_table(safe_df(audience_guidance.get('recommended_outputs')), 'Audience-specific output guidance appears here once the current role and dataset context are in scope.')
@@ -662,6 +796,25 @@ def render_export_center(pipeline: dict[str, Any], dataset_name: str, source_met
         info_or_table(cross_setting, 'Cross-setting reporting guidance appears here when the current dataset maps cleanly to one or more review contexts.')
         info_or_table(bundle_manifest, 'Bundle manifest details appear here after the export bundle profile is prepared for the selected role.')
         tracked_download_button('Download bundle manifest CSV', data=dataframe_to_csv_bytes(bundle_manifest), file_name='role_export_bundle_manifest.csv', mime='text/csv', disabled=not advanced_exports_allowed, event_detail='Downloaded the role export bundle manifest CSV.')
+        with st.expander('Professional report template', expanded=False):
+            st.caption(str(professional_template.get('title', 'Professional export template')))
+            info_or_table(
+                pd.DataFrame({'section': professional_template.get('sections', [])}),
+                'Template sections will appear here once the selected report mode is available.',
+            )
+            for principle in professional_template.get('principles', []):
+                st.write(f'- {principle}')
+        with st.expander('Demo walkthrough and pitch pack', expanded=False):
+            info_or_table(
+                build_demo_walkthrough_table(),
+                'Demo walkthrough guidance will appear here when Clinverity positioning content is available.',
+            )
+            info_or_table(
+                build_role_pitch_table(),
+                'Role-based pitch variants will appear here when the pitch pack is available.',
+            )
+            st.caption('3-5 minute demo script')
+            st.code(build_demo_script_text(), language='text')
         tracked_download_button('Download bundle guide TXT', data=protect(bundle_text), file_name='role_export_bundle_guide.txt', mime='text/plain', disabled=not advanced_exports_allowed, event_detail='Downloaded the role export bundle guide TXT.')
         application_service = st.session_state.get('application_service')
         if not bundle_manifest.empty:
@@ -772,6 +925,17 @@ def render_export_center(pipeline: dict[str, Any], dataset_name: str, source_met
     with export_sections['report_generation']:
         st.markdown('### Report exports')
         st.caption('Choose the smallest set of exports that matches the audience for this review cycle: one primary report, supporting tables when needed, and governance material only when the handoff calls for it.')
+        top_export_plan = (
+            export_execution_plan.loc[export_execution_plan['action'].astype(str) == f'Generate {recommended_export_label}']
+            if not export_execution_plan.empty and 'action' in export_execution_plan.columns
+            else pd.DataFrame()
+        )
+        if not top_export_plan.empty:
+            top_export_row = dict(top_export_plan.iloc[0].to_dict())
+            if bool(top_export_row.get('allowed')):
+                st.caption(f"Recommended next export: {recommended_export_label} ({top_export_row.get('execution_posture', 'Run here')}).")
+            else:
+                st.info(str(top_export_row.get('gating_reason', 'The recommended export is currently gated by runtime or export policy.')))
         if executive_summary:
             st.caption('Executive summary preview')
             for bullet in executive_summary.get('stakeholder_summary_bullets', [])[:3]:
@@ -788,6 +952,7 @@ def render_export_center(pipeline: dict[str, Any], dataset_name: str, source_met
             ('Generate Data Readiness Report', 'Data Readiness Report'),
             ('Generate Clinical Summary', 'Clinical Summary'),
             ('Generate Readmission Report', 'Readmission Report'),
+            ('Generate Claims Validation Report', 'Claims Validation Report'),
         ]
         report_status = st.empty()
         report_progress = st.empty()
@@ -799,9 +964,10 @@ def render_export_center(pipeline: dict[str, Any], dataset_name: str, source_met
             if export_started_at and (time.monotonic() - export_started_at) >= 5.0:
                 report_progress.progress(bounded, text=f'Export in progress: {message}')
 
-        report_cols = st.columns(5)
+        report_cols = st.columns(3)
         for idx, (button_label, report_label) in enumerate(report_actions):
-            if report_cols[idx].button(button_label, key=f"generate_{report_label.lower().replace(' ', '_')}"):
+            target_col = report_cols[idx % len(report_cols)]
+            if target_col.button(button_label, key=f"generate_{report_label.lower().replace(' ', '_')}"):
                 try:
                     export_started_at = time.monotonic()
                     report_progress.empty()
@@ -904,9 +1070,13 @@ def render_export_center(pipeline: dict[str, Any], dataset_name: str, source_met
                 data=active_generated_report.get('zip_bytes', b''),
                 file_name=f"{selected_generated_report.replace(' ', '_').lower()}_bundle.zip",
                 mime='application/zip',
-                disabled=not export_allowed,
+                disabled=not bool(
+                    export_allowed and bool(export_runtime_profile.get('supports_governed_packaging'))
+                ),
                 event_detail=f'Downloaded the generated {selected_generated_report} ZIP export bundle.',
             )
+            if not bool(export_runtime_profile.get('supports_governed_packaging')):
+                st.caption('ZIP bundle packaging is available from local or staging operator runtimes. Lightweight report downloads remain available here.')
         else:
             st.info('Generate an analyst, executive, or data readiness report to create stakeholder-ready TXT, PDF, Excel, JSON, and ZIP deliverables for this dataset.')
         recent_jobs = build_job_status_view(st.session_state.get('job_runs', [])[:5])
@@ -927,6 +1097,16 @@ def render_export_center(pipeline: dict[str, Any], dataset_name: str, source_met
         tracked_download_button('Download Dataset Summary Report', data=protect(text_report), file_name='smart_dataset_summary.txt', mime='text/plain', disabled=not export_allowed, event_detail='Downloaded the dataset summary report.')
         tracked_download_button('Download Executive Summary Report', data=protect(executive_report), file_name='executive_summary.txt', mime='text/plain', disabled=not export_allowed, event_detail='Downloaded the executive summary report.')
         tracked_download_button('Download Readmission Summary Report', data=protect(readmission_report), file_name='readmission_summary.txt', mime='text/plain', disabled=not export_allowed, event_detail='Downloaded the readmission summary report.')
+        claims_available = bool(pipeline['healthcare'].get('claims_validation_utilization', {}).get('available'))
+        if claims_available:
+            st.markdown('### Claims workflow exports')
+            st.caption('Use these claims-focused artifacts for recruiter demos, payer workflow walkthroughs, and quality-review handoffs.')
+            info_or_table(safe_df(claims_export_tables.get('qc_summary')), 'Claims QC summary is not available for the current dataset.')
+            info_or_table(safe_df(claims_export_tables.get('claims_validation_issue_log')).head(20), 'Claims issue log is not available for the current dataset.')
+            tracked_download_button('Download Claims Validation Report', data=protect(claims_report), file_name='claims_validation_report.md', mime='text/markdown', disabled=not export_allowed, event_detail='Downloaded the claims validation report.')
+            tracked_download_button('Download Claims QC Summary', data=claims_export_bundle['qc_summary.csv'], file_name='qc_summary.csv', mime='text/csv', disabled=not export_allowed, event_detail='Downloaded the claims QC summary CSV.')
+            tracked_download_button('Download Claims Validation Issue Log', data=claims_export_bundle['claims_validation_issue_log.csv'], file_name='claims_validation_issue_log.csv', mime='text/csv', disabled=not export_allowed, event_detail='Downloaded the claims validation issue log CSV.')
+            tracked_download_button('Download Claims Utilization Metrics', data=claims_export_bundle['utilization_metrics.csv'], file_name='utilization_metrics.csv', mime='text/csv', disabled=not export_allowed, event_detail='Downloaded the claims utilization metrics CSV.')
         tracked_download_button('Download Audience-Specific Report', data=protect(audience_report), file_name=f"{normalize_report_mode(report_mode).replace(' ', '_').lower()}.txt", mime='text/plain', disabled=not export_allowed, event_detail=f'Downloaded the {normalize_report_mode(report_mode)} audience-specific report.')
         tracked_download_button('Download Report Support Tables CSV', data=support_csv, file_name='report_support_tables.csv', mime='text/csv', disabled=not export_allowed, event_detail='Downloaded the report support tables CSV.')
 
@@ -935,14 +1115,16 @@ def render_export_center(pipeline: dict[str, Any], dataset_name: str, source_met
             st.markdown('### Compliance dashboard pack')
             tracked_download_button('Download compliance summary', data=protect(compliance_summary), file_name='compliance_summary.txt', mime='text/plain', disabled=not export_allowed, event_detail='Downloaded the compliance summary.')
             tracked_download_button('Download compliance review CSV', data=compliance_csv, file_name='compliance_review.csv', mime='text/csv', disabled=not export_allowed, event_detail='Downloaded the compliance review CSV.')
-            tracked_download_button('Download compliance dashboard JSON', data=json_bytes(compliance_payload), file_name='compliance_dashboard.json', mime='application/json', disabled=not advanced_exports_allowed, event_detail='Downloaded the compliance dashboard JSON.')
-            tracked_download_button('Download compliance dashboard CSV', data=build_compliance_dashboard_csv(pipeline['standards'], privacy, role=role), file_name='compliance_dashboard.csv', mime='text/csv', disabled=not advanced_exports_allowed, event_detail='Downloaded the compliance dashboard CSV.')
-            tracked_download_button('Download compliance handoff JSON', data=json_bytes(compliance_handoff), file_name='compliance_handoff.json', mime='application/json', disabled=not advanced_exports_allowed, event_detail='Downloaded the compliance handoff JSON.')
+            tracked_download_button('Download compliance dashboard JSON', data=json_bytes(compliance_payload), file_name='compliance_dashboard.json', mime='application/json', disabled=not bool(advanced_exports_allowed and export_runtime_profile.get('supports_governed_packaging')), event_detail='Downloaded the compliance dashboard JSON.')
+            tracked_download_button('Download compliance dashboard CSV', data=build_compliance_dashboard_csv(pipeline['standards'], privacy, role=role), file_name='compliance_dashboard.csv', mime='text/csv', disabled=not bool(advanced_exports_allowed and export_runtime_profile.get('supports_governed_packaging')), event_detail='Downloaded the compliance dashboard CSV.')
+            tracked_download_button('Download compliance handoff JSON', data=json_bytes(compliance_handoff), file_name='compliance_handoff.json', mime='application/json', disabled=not bool(advanced_exports_allowed and export_runtime_profile.get('supports_governed_packaging')), event_detail='Downloaded the compliance handoff JSON.')
 
             st.markdown('### Governance and audit packet')
-            tracked_download_button('Download governance review TXT', data=protect(governance_text), file_name='governance_review.txt', mime='text/plain', disabled=not governance_exports_allowed, event_detail='Downloaded the governance review TXT.')
-            tracked_download_button('Download governance review CSV', data=governance_csv, file_name='governance_review.csv', mime='text/csv', disabled=not governance_exports_allowed, event_detail='Downloaded the governance review CSV.')
-            tracked_download_button('Download governance review JSON', data=json_bytes(governance_payload), file_name='governance_review.json', mime='application/json', disabled=not governance_exports_allowed, event_detail='Downloaded the governance review JSON.')
+            tracked_download_button('Download governance review TXT', data=protect(governance_text), file_name='governance_review.txt', mime='text/plain', disabled=not bool(governance_exports_allowed and export_runtime_profile.get('supports_governed_packaging')), event_detail='Downloaded the governance review TXT.')
+            tracked_download_button('Download governance review CSV', data=governance_csv, file_name='governance_review.csv', mime='text/csv', disabled=not bool(governance_exports_allowed and export_runtime_profile.get('supports_governed_packaging')), event_detail='Downloaded the governance review CSV.')
+            tracked_download_button('Download governance review JSON', data=json_bytes(governance_payload), file_name='governance_review.json', mime='application/json', disabled=not bool(governance_exports_allowed and export_runtime_profile.get('supports_governed_packaging')), event_detail='Downloaded the governance review JSON.')
+            if not bool(export_runtime_profile.get('supports_governed_packaging')):
+                st.caption('Compliance handoff packages and governance audit packets are intentionally gated to local or staging runtimes.')
 
             docs = pipeline.get('documentation_support', {})
             screenshots = pipeline.get('screenshot_support', {})

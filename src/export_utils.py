@@ -15,6 +15,11 @@ from src.reports.bundles import (
     build_shared_report_bundles,
     recommended_report_mode_for_role,
 )
+from src.reports.claims_reports import (
+    build_claims_export_csv_bundle,
+    build_claims_export_tables,
+    build_claims_validation_report_markdown,
+)
 from src.reports.clinical_reports import build_text_report
 from src.reports.common import (
     REPORT_MODE_ALIASES,
@@ -54,6 +59,9 @@ __all__ = [
     'build_compliance_dashboard_csv',
     'build_compliance_dashboard_payload',
     'build_compliance_handoff_payload',
+    'build_claims_export_csv_bundle',
+    'build_claims_export_tables',
+    'build_claims_validation_report_markdown',
     'build_compliance_summary_text',
     'build_compliance_support_csv',
     'build_cross_setting_reporting_profile',

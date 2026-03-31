@@ -42,6 +42,8 @@ from src.enterprise_features import (
     infer_linked_dataset_role,
     preview_linked_merge,
 )
+from src.evolution_engine import merge_evolution_memory, queue_execution_items
+from src.evolution_memory_store import save_evolution_memory
 from src.export_utils import (
     apply_export_policy,
     apply_role_based_redaction,
@@ -113,15 +115,19 @@ from src.ui_components import (
     render_workflow_steps,
 )
 from src.usage_analytics import build_customer_success_summary, build_usage_analytics_view
+from src.versioning import current_build_label
 from ui.common import fmt, info_or_table, log_event, safe_df
 from ui.data_intake import render_data_intake
 from ui.data_quality import render_quality, render_readiness
 from ui.dataset_profile import render_column_detection, render_overview, render_profiling
 from ui.healthcare_analytics import render_cohort_analysis, render_healthcare, render_trend_analysis
 from ui.insights_export import render_export_center, render_key_insights
+from ui.admin_diagnostics import render_admin_diagnostics
+from ui.policy_center import render_policy_center
 from src.data_intake_support import apply_auto_mapping_suggestions, build_remap_board
 
 APP_TITLE = 'Clinverity'
+BUILD_LABEL = current_build_label()
 TAB_LABELS = [
     'Data Intake',
     'Overview',
@@ -134,6 +140,8 @@ TAB_LABELS = [
     'Cohort Analysis',
     'Key Insights',
     'Export Center',
+    'Policy Center',
+    'Admin Diagnostics',
 ]
 
 ROLE_OPTIONS = ['Admin', 'Analyst', 'Executive', 'Clinician', 'Researcher', 'Data Steward', 'Viewer']
@@ -154,6 +162,8 @@ TAB_LABELS = [
     'Cohort Analysis',
     'Key Insights',
     'Export Center',
+    'Policy Center',
+    'Admin Diagnostics',
 ]
 
 DEFAULT_DEMO_DATASET_NAME = 'Healthcare Operations Demo'
@@ -249,6 +259,11 @@ def _store_active_dataset_bundle(dataset_selection, *, source_meta_override: dic
     st.session_state['active_dataset_bundle'] = {
         **active_bundle,
     }
+    persistable_bundle = _get_dataset_service_module().build_persistable_active_bundle(active_bundle)
+    st.session_state['persisted_active_dataset_bundle'] = persistable_bundle
+    application_service = st.session_state.get('application_service')
+    if application_service is not None:
+        application_service.persist_user_settings(st.session_state)
 
 
 def _load_cached_dataset_selection():
@@ -270,6 +285,7 @@ def _render_demo_ready_empty_state() -> None:
         title=APP_TITLE,
         subtitle=BRAND_SUBTITLE,
         tagline='Clinical Data Quality & Analytics Platform for Healthcare Datasets',
+        build_label=BUILD_LABEL,
         context_items=[
             ('Mode', 'Awaiting dataset'),
             ('Demo dataset', DEFAULT_DEMO_DATASET_NAME),
@@ -854,6 +870,7 @@ def main() -> None:
         workspace_name=str(st.session_state.get('workspace_name', 'Guest Demo Workspace')),
         source_mode='Demo-safe workspace' if st.session_state.get('product_demo_mode_enabled', True) else 'Configured workspace',
         version_note='Clinical review shell',
+        build_label=BUILD_LABEL,
     )
     render_sidebar_section(st.sidebar, 'Dataset session')
     render_sidebar_panel(
@@ -1175,6 +1192,31 @@ def main() -> None:
     progress_bar.empty()
     progress_placeholder.caption('Analysis context is ready. Use the tabs below to explore the current dataset.')
     pipeline = analysis_result.pipeline or {}
+    evolution_summary = dict(pipeline.get('evolution_summary', {}))
+    if evolution_summary.get('available'):
+        auto_execution_queue = queue_execution_items(
+            st.session_state.get('evolution_execution_queue', []),
+            evolution_summary.get('proposal_queue_table'),
+            dataset_name=dataset_name,
+            dataset_family_key=str(evolution_summary.get('dataset_family_key', 'generic-healthcare')),
+        )
+        st.session_state['evolution_execution_queue'] = auto_execution_queue
+        updated_memory = merge_evolution_memory(
+            st.session_state.get('evolution_memory', {}),
+            evolution_summary,
+            dataset_name=dataset_name,
+        )
+        updated_memory['execution_queue'] = list(auto_execution_queue)
+        st.session_state['evolution_memory'] = updated_memory
+        save_evolution_memory(
+            updated_memory,
+            storage_service=st.session_state.get('storage_service'),
+            workspace_identity=st.session_state.get('workspace_identity', {}),
+        )
+        if application_service is not None:
+            application_service.persist_user_settings(st.session_state)
+        evolution_summary['memory_snapshot'] = updated_memory
+        pipeline['evolution_summary'] = evolution_summary
     st.session_state['active_dataset_diagnostics'] = _build_active_dataset_diagnostics(dataset_selection, pipeline)
     visualization_performance.warm_healthcare_visualization_payloads(st.session_state, pipeline)
     demo_usage_seed = analysis_result.demo_usage_seed or {}
@@ -1223,6 +1265,7 @@ def main() -> None:
         title=APP_TITLE,
         subtitle=BRAND_SUBTITLE,
         tagline=BRAND_TAGLINE,
+        build_label=BUILD_LABEL,
         context_items=[
             ('Dataset', dataset_name),
             ('Readiness', fmt(pipeline['readiness']['readiness_score'], 'score')),
@@ -1512,6 +1555,10 @@ def main() -> None:
         render_safely('Insights & Export · Key Insights', render_key_insights, pipeline, dataset_name)
     with tabs[10]:
         render_safely('Insights & Export · Export Center', render_export_center, pipeline, source_meta=source_meta, dataset_name=dataset_name)
+    with tabs[11]:
+        render_safely('Policy Center', render_policy_center, pipeline, dataset_name, source_meta)
+    with tabs[12]:
+        render_safely('Admin Diagnostics', render_admin_diagnostics, pipeline, dataset_name, source_meta)
 
 
 if __name__ == '__main__':

@@ -68,6 +68,49 @@ SURFACE_RULES = {
     'radius_input': '14px',
 }
 
+UI_ADAPTATION_PROFILES = {
+    'showcase': {
+        'label': 'Showcase motion',
+        'description': 'Expressive demo-mode motion with richer gradients and staggered reveals.',
+        'motion_duration': '0.52s',
+        'motion_distance': '14px',
+        'motion_delay_step': '0.07s',
+        'ambient_primary': 'rgba(20, 184, 166, 0.14)',
+        'ambient_secondary': 'rgba(31, 78, 121, 0.12)',
+        'surface_glow': '0 22px 48px rgba(15, 23, 42, 0.10)',
+    },
+    'balanced': {
+        'label': 'Balanced motion',
+        'description': 'Default adaptive motion for regular interactive clinical review work.',
+        'motion_duration': '0.42s',
+        'motion_distance': '10px',
+        'motion_delay_step': '0.05s',
+        'ambient_primary': 'rgba(20, 184, 166, 0.10)',
+        'ambient_secondary': 'rgba(31, 78, 121, 0.10)',
+        'surface_glow': '0 18px 42px rgba(15, 23, 42, 0.08)',
+    },
+    'focused': {
+        'label': 'Focused motion',
+        'description': 'Calmer motion for large, sampled, or long-running uploaded datasets.',
+        'motion_duration': '0.28s',
+        'motion_distance': '5px',
+        'motion_delay_step': '0.03s',
+        'ambient_primary': 'rgba(20, 184, 166, 0.06)',
+        'ambient_secondary': 'rgba(31, 78, 121, 0.07)',
+        'surface_glow': '0 14px 30px rgba(15, 23, 42, 0.06)',
+    },
+    'refined': {
+        'label': 'Refined motion',
+        'description': 'More restrained transitions for executive and presentation-oriented review.',
+        'motion_duration': '0.34s',
+        'motion_distance': '7px',
+        'motion_delay_step': '0.04s',
+        'ambient_primary': 'rgba(20, 184, 166, 0.08)',
+        'ambient_secondary': 'rgba(31, 78, 121, 0.08)',
+        'surface_glow': '0 16px 34px rgba(15, 23, 42, 0.07)',
+    },
+}
+
 CARD_STYLE = f"""
 <style>
     :root {{
@@ -202,6 +245,34 @@ CARD_STYLE = f"""
         color: var(--clinverity-muted);
         font-size: 0.92rem;
         margin-bottom: 0.95rem;
+    }}
+    .clinverity-hero-meta {{
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        align-items: center;
+        margin-bottom: 0.8rem;
+    }}
+    .clinverity-hero-build,
+    .clinverity-motion-pill {{
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        padding: 0.34rem 0.68rem;
+        border-radius: 999px;
+        border: 1px solid rgba(31, 78, 121, 0.14);
+        background: rgba(248, 250, 252, 0.82);
+        color: var(--clinverity-primary);
+        font-size: 0.74rem;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        box-shadow: 0 6px 14px rgba(15, 23, 42, 0.05);
+        backdrop-filter: blur(8px);
+    }}
+    .clinverity-motion-pill {{
+        color: #0F766E;
+        border-color: rgba(20, 184, 166, 0.16);
+        background: rgba(231, 251, 248, 0.86);
     }}
     .clinverity-context-grid {{
         display: grid;
@@ -832,8 +903,43 @@ CARD_STYLE = f"""
             transform: translateY(0);
         }}
     }}
+    @keyframes clinverity-rise {{
+        from {{
+            opacity: 0;
+            transform: translateY(var(--clinverity-motion-distance, 8px)) scale(0.992);
+        }}
+        to {{
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }}
+    }}
+    @keyframes clinverity-sheen {{
+        from {{
+            background-position: 0% 50%;
+        }}
+        to {{
+            background-position: 100% 50%;
+        }}
+    }}
     [data-testid='stSidebar'] svg {{
         fill: var(--clinverity-muted);
+    }}
+    @media (prefers-reduced-motion: reduce) {{
+        .stApp,
+        .clinverity-hero,
+        .clinverity-sidebar-brand,
+        .clinverity-context-card,
+        .clinverity-panel,
+        .clinverity-workflow-step,
+        .sda-metric-card,
+        div.stButton > button,
+        div[data-testid='stDownloadButton'] > button,
+        [data-baseweb='tab'],
+        div[data-testid='stExpander'] {{
+            animation: none !important;
+            transition: none !important;
+            transform: none !important;
+        }}
     }}
     .stCheckbox label p,
     .stRadio label p {{
@@ -896,9 +1002,127 @@ def _configure_plotly_theme() -> None:
     pio.templates.default = 'clinverity'
 
 
+def build_ui_adaptation_profile(session_state=None) -> dict[str, str]:
+    state = session_state or st.session_state
+    active_bundle = state.get('active_dataset_bundle') or {}
+    source_meta = active_bundle.get('source_meta') if isinstance(active_bundle, dict) else {}
+    if not isinstance(source_meta, dict):
+        source_meta = {}
+    source_mode = str(
+        state.get('source_mode')
+        or active_bundle.get('source_mode')
+        or source_meta.get('source_mode')
+        or ''
+    ).strip().lower()
+    role = str(state.get('workspace_role') or state.get('active_role') or '').strip()
+    row_count = int(
+        source_meta.get('source_row_count')
+        or source_meta.get('row_count')
+        or source_meta.get('rows_in_scope')
+        or 0
+    )
+    file_size_mb = float(source_meta.get('file_size_mb', 0.0) or 0.0)
+    sampling_mode = str(source_meta.get('sampling_mode', '') or '').strip().lower()
+
+    if ('demo' in source_mode or 'built-in' in source_mode) and row_count <= 10_000:
+        profile_key = 'showcase'
+    elif row_count >= 150_000 or file_size_mb >= 25.0 or sampling_mode == 'sampled':
+        profile_key = 'focused'
+    elif role in {'Executive', 'Viewer'}:
+        profile_key = 'refined'
+    else:
+        profile_key = 'balanced'
+
+    return {
+        'profile_key': profile_key,
+        **UI_ADAPTATION_PROFILES[profile_key],
+    }
+
+
 def apply_theme() -> None:
     _configure_plotly_theme()
     st.markdown(CARD_STYLE, unsafe_allow_html=True)
+    ui_profile = build_ui_adaptation_profile(st.session_state)
+    st.markdown(
+        f"""
+<style>
+    :root {{
+        --clinverity-motion-duration: {ui_profile['motion_duration']};
+        --clinverity-motion-distance: {ui_profile['motion_distance']};
+        --clinverity-motion-delay-step: {ui_profile['motion_delay_step']};
+        --clinverity-ambient-primary: {ui_profile['ambient_primary']};
+        --clinverity-ambient-secondary: {ui_profile['ambient_secondary']};
+        --clinverity-surface-glow: {ui_profile['surface_glow']};
+    }}
+    .stApp {{
+        background:
+            radial-gradient(circle at 0% 4%, var(--clinverity-ambient-primary), transparent 32%),
+            radial-gradient(circle at 100% 10%, var(--clinverity-ambient-secondary), transparent 28%),
+            linear-gradient(180deg, #edf5fb 0%, var(--clinverity-bg) 45%, #d7e5f0 100%);
+    }}
+    .clinverity-hero,
+    .clinverity-sidebar-brand,
+    .clinverity-panel,
+    .clinverity-workflow-step,
+    .sda-metric-card,
+    div[data-testid='stDataFrame'],
+    div[data-testid='stTable'],
+    div[data-testid='stExpander'] {{
+        animation: clinverity-rise var(--clinverity-motion-duration) cubic-bezier(0.2, 0.8, 0.2, 1) both;
+        box-shadow: var(--clinverity-surface-glow);
+    }}
+    .clinverity-context-card,
+    .clinverity-badge,
+    .clinverity-sidebar-meta-item,
+    .clinverity-sidebar-panel,
+    .clinverity-sidebar-stat {{
+        animation: clinverity-rise calc(var(--clinverity-motion-duration) * 0.92) cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    }}
+    .clinverity-context-card:nth-child(1),
+    .clinverity-workflow-step:nth-child(1) {{ animation-delay: calc(var(--clinverity-motion-delay-step) * 1); }}
+    .clinverity-context-card:nth-child(2),
+    .clinverity-workflow-step:nth-child(2) {{ animation-delay: calc(var(--clinverity-motion-delay-step) * 2); }}
+    .clinverity-context-card:nth-child(3),
+    .clinverity-workflow-step:nth-child(3) {{ animation-delay: calc(var(--clinverity-motion-delay-step) * 3); }}
+    .clinverity-context-card:nth-child(4),
+    .clinverity-workflow-step:nth-child(4) {{ animation-delay: calc(var(--clinverity-motion-delay-step) * 4); }}
+    .clinverity-sidebar-meta-item:nth-child(1),
+    .clinverity-sidebar-stat:nth-child(1) {{ animation-delay: calc(var(--clinverity-motion-delay-step) * 1); }}
+    .clinverity-sidebar-meta-item:nth-child(2),
+    .clinverity-sidebar-stat:nth-child(2) {{ animation-delay: calc(var(--clinverity-motion-delay-step) * 2); }}
+    .clinverity-sidebar-meta-item:nth-child(3),
+    .clinverity-sidebar-stat:nth-child(3) {{ animation-delay: calc(var(--clinverity-motion-delay-step) * 3); }}
+    .clinverity-sidebar-meta-item:nth-child(4) {{ animation-delay: calc(var(--clinverity-motion-delay-step) * 4); }}
+    .clinverity-hero {{
+        position: relative;
+        overflow: hidden;
+        background-size: 180% 180%;
+        animation:
+            clinverity-rise var(--clinverity-motion-duration) cubic-bezier(0.2, 0.8, 0.2, 1) both,
+            clinverity-sheen 12s ease-in-out infinite alternate;
+    }}
+    .clinverity-hero::after {{
+        content: '';
+        position: absolute;
+        inset: 0;
+        background:
+            linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.24) 18%, transparent 36%);
+        transform: translateX(-120%);
+        animation: clinverity-sheen 14s ease-in-out infinite alternate;
+        pointer-events: none;
+        opacity: 0.7;
+    }}
+    .clinverity-panel[data-tone='info'],
+    .clinverity-panel[data-tone='accent'] {{
+        background-size: 160% 160%;
+        animation:
+            clinverity-rise var(--clinverity-motion-duration) cubic-bezier(0.2, 0.8, 0.2, 1) both,
+            clinverity-sheen 14s ease-in-out infinite alternate;
+    }}
+</style>
+""",
+        unsafe_allow_html=True,
+    )
 
 
 def _render_metric_cards(items: list[tuple[str, str, str | None]]) -> None:
@@ -955,8 +1179,10 @@ def render_app_header(
     subtitle: str = BRAND_SUBTITLE,
     tagline: str = BRAND_TAGLINE,
     context_items: list[tuple[str, str]] | None = None,
+    build_label: str = '',
 ) -> None:
     cards_html = ''
+    meta_html = ''
     if context_items:
         cards = []
         for label, value in context_items:
@@ -967,10 +1193,17 @@ def render_app_header(
                 "</div>"
             )
         cards_html = f"<div class='clinverity-context-grid'>{''.join(cards)}</div>"
+    ui_profile = build_ui_adaptation_profile(st.session_state)
+    if str(build_label).strip():
+        meta_html += f"<div class='clinverity-hero-build'>{escape(build_label)}</div>"
+    meta_html += f"<div class='clinverity-motion-pill'>{escape(ui_profile['label'])}</div>"
+    if meta_html:
+        meta_html = f"<div class='clinverity-hero-meta'>{meta_html}</div>"
     st.markdown(
         (
             "<section class='clinverity-hero'>"
             "<div class='clinverity-hero-eyebrow'>Clinical data quality platform</div>"
+            f"{meta_html}"
             f"<div class='clinverity-hero-title'>{escape(title)}</div>"
             f"<div class='clinverity-hero-subtitle'>{escape(subtitle)}</div>"
             f"<div class='clinverity-hero-tagline'>{escape(tagline)}</div>"
@@ -987,7 +1220,23 @@ def render_sidebar_brand(
     workspace_name: str = 'Guest Demo Workspace',
     source_mode: str = 'Demo mode',
     version_note: str = 'Clinverity pilot workspace',
+    build_label: str = '',
 ) -> None:
+    build_meta_html = ''
+    ui_profile = build_ui_adaptation_profile(st.session_state)
+    if str(build_label).strip():
+        build_meta_html = (
+            "<div class='clinverity-sidebar-meta-item'>"
+            "<div class='clinverity-sidebar-meta-label'>Build</div>"
+            f"<div class='clinverity-sidebar-meta-value'>{escape(build_label)}</div>"
+            "</div>"
+        )
+    ui_profile_html = (
+        "<div class='clinverity-sidebar-meta-item'>"
+        "<div class='clinverity-sidebar-meta-label'>Adaptive UI</div>"
+        f"<div class='clinverity-sidebar-meta-value'>{escape(ui_profile['label'])}</div>"
+        "</div>"
+    )
     sidebar.markdown(
         (
             "<section class='clinverity-sidebar-brand'>"
@@ -1008,6 +1257,8 @@ def render_sidebar_brand(
             "<div class='clinverity-sidebar-meta-label'>Platform</div>"
             f"<div class='clinverity-sidebar-meta-value'>{escape(version_note)}</div>"
             "</div>"
+            f"{ui_profile_html}"
+            f"{build_meta_html}"
             "</div>"
             "</section>"
         ),

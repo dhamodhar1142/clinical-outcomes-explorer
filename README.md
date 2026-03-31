@@ -1,9 +1,9 @@
-# Smart Dataset Analyzer
+# Clinverity
 
-Smart Dataset Analyzer is an advanced **healthcare analytics and data intelligence platform** built with Python and Streamlit.  
-It helps analysts and healthcare teams **profile messy datasets, detect structural and semantic patterns, unlock blocked analytics workflows, and generate stakeholder-ready reports**.
+Clinverity is an advanced **healthcare data readiness, analytics, and reporting platform** built with Python and Streamlit.  
+It helps healthcare teams **turn raw clinical or operational datasets into trusted readiness assessments, actionable analytics, and stakeholder-ready reports**.
 
-The platform combines **data profiling, remediation pipelines, predictive modeling, governance checks, and decision-support tools** into a single interactive analytics environment.
+The platform combines **data profiling, remediation pipelines, healthcare analytics, governance checks, and decision-support tools** into a single interactive workflow.
 
 It is designed as a **portfolio-ready analytics product** that demonstrates how modern healthcare analytics systems can:
 
@@ -15,6 +15,16 @@ It is designed as a **portfolio-ready analytics product** that demonstrates how 
 
 This repository demonstrates **analytics engineering, healthcare data science, governance-aware analytics design, and product-style dashboard development** in one project.
 
+## Product statement
+
+Clinverity helps healthcare teams turn raw clinical or operational datasets into trusted readiness assessments, actionable analytics, and stakeholder-ready reports.
+
+## Core outcomes
+
+- Make dataset risk visible fast
+- Turn healthcare data into decisions
+- Package proof for stakeholders
+
 ## Why this project exists
 
 Real-world healthcare and operational datasets are rarely clean, fully mapped, or immediately analytics-ready. This project demonstrates how a modern analytics product can:
@@ -23,7 +33,13 @@ Real-world healthcare and operational datasets are rarely clean, fully mapped, o
 - profile and score dataset readiness automatically
 - surface healthcare-specific analytics only when the data supports them
 - disclose synthetic helper support transparently when demo-safe augmentation is used
-- produce polished stakeholder outputs for analysts, operators, and recruiters
+- produce polished stakeholder outputs for analysts, operators, clients, and recruiters
+
+## Delivery pack
+
+The focused 7-day packaging assets live here:
+
+- [docs/clinverity_7_day_delivery_pack.md](C:\Users\dhamo\OneDrive\Desktop\clinical-outcomes-explorer\docs\clinverity_7_day_delivery_pack.md)
 
 ## Key capabilities
 
@@ -32,6 +48,7 @@ Real-world healthcare and operational datasets are rarely clean, fully mapped, o
 - Semantic mapping and healthcare-aware field inference
 - Data quality review, remediation guidance, and governance support
 - Healthcare analytics including:
+  - claims validation and utilization intelligence
   - risk segmentation
   - readmission-focused analytics
   - cohort builder and cohort monitoring
@@ -86,13 +103,15 @@ The app keeps a modular Python architecture built around a single Streamlit entr
 - `src/readiness_engine.py`
   - readiness activation and scoring
 - `src/healthcare_analysis.py`
-  - healthcare analytics modules and pathway/readmission/risk logic
+  - healthcare analytics modules and pathway/readmission/risk/claims logic
 - `src/modeling_studio.py`
   - modeling, model comparison, fairness, explainability
 - `src/decision_support.py`
   - executive summaries, benchmarking, scenarios, recommendations, prioritized insights
 - `src/export_utils.py`
   - report builders, governance/compliance exports, manifest helpers
+- `src/reports/claims_reports.py`
+  - claims QC summaries, issue logs, utilization metrics, and markdown handoff reports
 - `src/presentation_support.py`
   - executive report pack, print-friendly outputs, run history, governance summary
 - `src/portfolio_support.py`
@@ -103,6 +122,7 @@ The app keeps a modular Python architecture built around a single Streamlit entr
 The repository includes built-in demo datasets so the app can be explored immediately:
 
 - `Healthcare Operations Demo`
+- `Healthcare Claims Demo`
 - `Hospital Reporting Demo`
 - `Generic Business Demo`
 
@@ -112,6 +132,49 @@ These are good for:
 - Streamlit deployment demos
 - explaining native vs synthetic support
 - showing how module readiness changes with dataset structure
+
+## Claims Validation & Utilization Engine
+
+This module extends Clinverity into payer and claims-style healthcare analytics without breaking the app's existing schema-flexible design.
+
+### Business problem
+
+Claims files are often structurally usable but operationally risky: duplicate claim IDs, missing service dates, mismatched billed/allowed/paid amounts, and unclear payer or provider concentration can all weaken downstream reporting. Analysts need a workflow that validates the file and then immediately turns it into interpretable utilization signals.
+
+### What this module validates
+
+- claim and member identity coverage
+- duplicate claim submissions or repeated claim rows
+- service-date completeness
+- missing billed, allowed, and paid financial fields
+- negative payment values
+- financial integrity mismatches such as `paid_amount > allowed_amount` and `allowed_amount > billed_amount`
+
+### Utilization insights included
+
+- payer-level claim and payment concentration
+- provider-level utilization summaries
+- diagnosis-level utilization summaries
+- monthly claims trend snapshots
+- flagged-claims review table for high-priority follow-up
+
+### Example outputs
+
+- `qc_summary.csv`
+- `claims_validation_issue_log.csv`
+- `utilization_metrics.csv`
+- `claims_validation_report.md`
+
+### Why this strengthens Clinverity
+
+The claims workflow makes the platform more credible for healthcare payer, revenue integrity, and operational analytics use cases. It gives recruiters and stakeholders a concrete example of healthcare claims QC, utilization review, and governed report generation inside the same product surface as readiness, remediation, and export workflows.
+
+### Resume-ready project bullets
+
+- Built a healthcare Claims Validation & Utilization Engine inside Clinverity to validate claim integrity, surface payer/provider concentration, and generate recruiter-ready report artifacts.
+- Added a claims-focused demo dataset with realistic member, claim, provider, diagnosis, and financial fields plus intentional integrity issues for interview-friendly walkthroughs.
+- Extended the governed Export Center with claims-specific CSV and markdown outputs, including QC summaries, issue logs, utilization metrics, and a plain-English validation report.
+- Preserved the existing modular architecture by implementing claims logic in reusable analytics and report modules with regression coverage and validation automation.
 
 ## Synthetic support explanation
 

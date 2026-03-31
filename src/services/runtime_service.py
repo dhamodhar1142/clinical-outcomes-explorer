@@ -6,6 +6,7 @@ import sys
 from typing import Any
 
 import src.auth as auth_module
+from src.evolution_memory_store import load_evolution_memory
 from src.jobs import build_job_runtime
 from src.persistence import build_persistence_service
 from src.profiler import default_profile_cache_metrics
@@ -80,6 +81,11 @@ def ensure_runtime_services(session_state: dict[str, Any]) -> RuntimeServices:
 def initialize_app_session_state(session_state: dict[str, Any]) -> RuntimeServices:
     services = ensure_runtime_services(session_state)
     guest_session = _get_auth_module().build_guest_auth_session()
+    workspace_identity = services.auth_service.build_workspace_identity(guest_session, 'Guest Demo Workspace')
+    persisted_evolution_memory = load_evolution_memory(
+        storage_service=services.storage_service,
+        workspace_identity=workspace_identity,
+    )
     defaults: dict[str, Any] = {
         'analysis_log': [],
         'saved_snapshots': {},
@@ -107,6 +113,13 @@ def initialize_app_session_state(session_state: dict[str, Any]) -> RuntimeServic
         'organization_benchmark_packs': {},
         'semantic_mapping_profiles': {},
         'dataset_review_approvals': {},
+        'product_evolution_mode': 'Adaptive',
+        'evolution_memory': persisted_evolution_memory,
+        'evolution_execution_queue': list(
+            persisted_evolution_memory.get('execution_queue', [])
+            if isinstance(persisted_evolution_memory, dict)
+            else []
+        ),
         'active_plan': 'Pro',
         'plan_enforcement_mode': 'Demo-safe',
         'run_history': [],
@@ -124,13 +137,14 @@ def initialize_app_session_state(session_state: dict[str, Any]) -> RuntimeServic
         'workspace_governance_export_access': 'Editors and owners',
         'workspace_governance_watermark_sensitive_exports': True,
         'auth_session': guest_session,
-        'workspace_identity': services.auth_service.build_workspace_identity(guest_session, 'Guest Demo Workspace'),
+        'workspace_identity': workspace_identity,
         'visited_sections': [],
         'demo_usage_seeded_keys': [],
         'generated_report_outputs': {},
         'job_runs': [],
         'profile_cache_metrics': default_profile_cache_metrics(),
         'active_dataset_bundle': None,
+        'persisted_active_dataset_bundle': None,
         'semantic_mapping_overrides_by_dataset': {},
         'latest_dataset_artifact': None,
         'pending_uploaded_dataset_state': None,
@@ -140,6 +154,13 @@ def initialize_app_session_state(session_state: dict[str, Any]) -> RuntimeServic
     for key, value in defaults.items():
         session_state.setdefault(key, value)
     services.application_service.hydrate_workspace_state(session_state)
+    persisted_bundle = session_state.get('persisted_active_dataset_bundle')
+    if session_state.get('active_dataset_bundle') is None and isinstance(persisted_bundle, dict):
+        session_state['active_dataset_bundle'] = dict(persisted_bundle)
+    if 'dataset_source_mode' not in session_state and isinstance(persisted_bundle, dict):
+        bundle_source_mode = str(persisted_bundle.get('source_mode', '') or '').strip()
+        if bundle_source_mode in {'Built-in example dataset', 'Uploaded dataset'}:
+            session_state['dataset_source_mode'] = bundle_source_mode
     return services
 
 
